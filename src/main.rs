@@ -929,43 +929,74 @@ impl App {
             let mut cancel_guard = self.active_worker_cancel.lock().await;
             for (_, cancel) in cancel_guard.drain() { let _ = cancel.send(()); }
         }
-        for id in self.active_downloads.drain() {
-            if let Some(item) = self.queue.iter_mut().find(|i| i.id == id) { cleanup_item_garbage(item); }
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        for item in &self.queue {
+            if item.status == ItemStatus::Downloading || item.status == ItemStatus::Paused {
+                cleanup_item_garbage(item);
+            }
         }
+        self.active_downloads.clear();
         self.queue.clear();
         self.queue_state.select(None);
     }
 
+    // Strictly skips the item currently highlighted by the user in the Media Queue window
     async fn skip_active_download(&mut self) {
-        let mut target_id = None;
-        if let Some(sel_idx) = self.queue_state.selected() {
-            let st = &self.queue[sel_idx].status;
-            if *st == ItemStatus::Downloading || *st == ItemStatus::Paused { target_id = Some(self.queue[sel_idx].id); }
-        }
-        if target_id.is_none() { target_id = self.active_downloads.iter().next().copied(); }
-        if target_id.is_none() { target_id = self.queue.iter().find(|i| i.status == ItemStatus::Paused).map(|i| i.id); }
+        let mut target_idx = None;
 
-        let Some(id) = target_id else { return; };
+        // 1. Always prioritize the exact item the user's cursor is hovering over in the Media Queue
+        if let Some(sel_idx) = self.queue_state.selected() {
+            if sel_idx < self.queue.len() {
+                match self.queue[sel_idx].status {
+                    ItemStatus::Downloading
+                    | ItemStatus::Paused
+                    | ItemStatus::Queued
+                    | ItemStatus::FetchingMeta
+                    | ItemStatus::New
+                    | ItemStatus::Ready => {
+                        target_idx = Some(sel_idx);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // 2. Fallback only if no skippable item is highlighted: pick the top-most Downloading/Paused item in queue order
+        if target_idx.is_none() {
+            target_idx = self.queue.iter().position(|i| {
+                i.status == ItemStatus::Downloading || i.status == ItemStatus::Paused
+            });
+        }
+
+        let Some(idx) = target_idx else { return; };
+        let id = self.queue[idx].id;
 
         if self.active_downloads.contains(&id) {
-            if let Some(cancel) = self.active_worker_cancel.lock().await.remove(&id) { let _ = cancel.send(()); }
+            if let Some(cancel) = self.active_worker_cancel.lock().await.remove(&id) {
+                let _ = cancel.send(());
+            }
             self.active_downloads.remove(&id);
         }
 
-        if let Some(item) = self.queue.iter_mut().find(|i| i.id == id) {
-            cleanup_item_garbage(item);
-            item.target_files.clear();
-            item.status = ItemStatus::Skipped; 
-            item.stats = DownloadStats::default();
-        }
+        // Brief wait so yt-dlp releases file locks on unmerged video streams (.f137.mp4) before we sweep
+        tokio::time::sleep(Duration::from_millis(60)).await;
+
+        cleanup_item_garbage(&self.queue[idx]);
+        self.queue[idx].status = ItemStatus::Skipped;
+        self.queue[idx].stats = DownloadStats::default();
+
         self.process_next_in_queue().await;
     }
 
     async fn toggle_pause_download(&mut self) {
         let mut target_idx = None;
         if let Some(sel_idx) = self.queue_state.selected() {
-            let st = &self.queue[sel_idx].status;
-            if *st == ItemStatus::Downloading || *st == ItemStatus::Paused { target_idx = Some(sel_idx); }
+            if sel_idx < self.queue.len() {
+                let st = &self.queue[sel_idx].status;
+                if *st == ItemStatus::Downloading || *st == ItemStatus::Paused {
+                    target_idx = Some(sel_idx);
+                }
+            }
         }
         if target_idx.is_none() { target_idx = self.queue.iter().position(|i| i.status == ItemStatus::Downloading); }
         if target_idx.is_none() { target_idx = self.queue.iter().position(|i| i.status == ItemStatus::Paused); }
@@ -1029,24 +1060,65 @@ impl App {
 
 // --- WORKER HELPERS & AGGRESSIVE CLEANUP ---
 
+// Strips yt-dlp intermediate stream suffixes like ".f137", ".f248", ".f140", ".temp" from a file stem
+fn strip_ytdlp_format_suffix(stem: &str) -> &str {
+    let mut s = stem.strip_suffix(".temp").unwrap_or(stem);
+    if let Some(dot_idx) = s.rfind('.') {
+        let after = &s[dot_idx + 1..];
+        if after.len() >= 2
+            && after.starts_with('f')
+            && after[1..].chars().all(|c| c.is_ascii_digit())
+        {
+            s = &s[..dot_idx];
+        }
+    }
+    s
+}
+
+// Extracts the clean title from a yt-dlp destination path (removing ".f137" and "_1080p" suffixes)
+fn clean_title_from_filename(file_name: &str) -> String {
+    let raw_stem = Path::new(file_name)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let without_fmt = strip_ytdlp_format_suffix(&raw_stem);
+    // Also strip trailing "_1080p", "_720p", "_1920x1080", "_NA" resolution tags for UI display
+    if let Some(u_idx) = without_fmt.rfind('_') {
+        let tail = &without_fmt[u_idx + 1..];
+        let is_res = tail == "NA"
+            || (tail.ends_with('p') && tail[..tail.len() - 1].chars().all(|c| c.is_ascii_digit()))
+            || (tail.contains('x') && tail.chars().all(|c| c.is_ascii_digit() || c == 'x'));
+        if is_res && u_idx > 0 {
+            return without_fmt[..u_idx].to_string();
+        }
+    }
+    without_fmt.to_string()
+}
+
 fn cleanup_item_garbage(item: &QueueItem) {
+    let mut base_prefixes: Vec<String> = Vec::new();
+
     for file in &item.target_files {
         let p = Path::new(file);
         let _ = std::fs::remove_file(p);
         let _ = std::fs::remove_file(format!("{}.part", file));
         let _ = std::fs::remove_file(format!("{}.ytdl", file));
-        
-        if let Some(parent) = p.parent() {
-            if let Some(stem) = p.file_stem() {
-                let base = parent.join(stem);
-                let _ = std::fs::remove_file(base.with_extension("webp"));
-                let _ = std::fs::remove_file(base.with_extension("jpg"));
-                let _ = std::fs::remove_file(base.with_extension("m4a"));
-                let _ = std::fs::remove_file(base.with_extension("webm"));
-                let _ = std::fs::remove_file(base.with_extension("mp4"));
-                let _ = std::fs::remove_file(base.with_extension("srt"));
-                let _ = std::fs::remove_file(base.with_extension("lrc"));
-                let _ = std::fs::remove_file(base.with_extension("vtt"));
+        let _ = std::fs::remove_file(format!("{}.temp", file));
+
+        if let Some(stem_os) = p.file_stem() {
+            let stem_str = stem_os.to_string_lossy();
+            let clean_base = strip_ytdlp_format_suffix(&stem_str);
+            if !clean_base.is_empty() {
+                base_prefixes.push(clean_base.to_lowercase());
+            }
+
+            if let Some(parent) = p.parent() {
+                for base_candidate in [stem_str.as_ref(), clean_base] {
+                    let base_path = parent.join(base_candidate);
+                    for ext in ["mp4", "webm", "mkv", "m4a", "mp3", "webp", "jpg", "png", "part", "ytdl", "srt", "lrc", "vtt"] {
+                        let _ = std::fs::remove_file(base_path.with_extension(ext));
+                    }
+                }
             }
         }
     }
@@ -1054,26 +1126,25 @@ fn cleanup_item_garbage(item: &QueueItem) {
     let target_dir = get_base_download_dir(item);
     if let Ok(entries) = std::fs::read_dir(target_dir) {
         let safe_title = item.title.replace(|c: char| !c.is_alphanumeric(), "").to_lowercase();
-        
-        if safe_title.is_empty()
-            || safe_title == "playlisttrack"
-            || safe_title == "imagegallery"
-            || safe_title == "redditpost"
-            || safe_title.starts_with("http")
-        { 
-            return; 
-        }
-        
+        let has_valid_title = !safe_title.is_empty()
+            && safe_title != "playlisttrack"
+            && safe_title != "imagegallery"
+            && safe_title != "redditpost"
+            && !safe_title.starts_with("http");
+
         for entry in entries.flatten() {
             let p = entry.path();
             if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                let lower_name = name.to_lowercase();
                 let safe_name = name.replace(|c: char| !c.is_alphanumeric(), "").to_lowercase();
-                
-                if safe_name.contains(&safe_title) {
-                    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-                    if ["part", "ytdl", "webp", "jpg", "png", "vtt", "srt", "lrc"].contains(&ext) {
-                        let _ = std::fs::remove_file(&p);
-                    }
+
+                // 1. If the file starts with the exact base prefix of any tracked stream (catches Title_1080p.f137.mp4 & .f140.m4a.part!)
+                let matches_prefix = base_prefixes.iter().any(|pref| !pref.is_empty() && lower_name.starts_with(pref));
+                // 2. Or if it matches the alphanumeric title
+                let matches_title = has_valid_title && safe_name.contains(&safe_title);
+
+                if matches_prefix || matches_title {
+                    let _ = std::fs::remove_file(&p);
                 }
             }
         }
@@ -1216,6 +1287,7 @@ async fn run_reddit_headless_dom_download(
         tokio::select! {
             _ = &mut *cancel_rx => {
                 let _ = child.kill().await;
+                let _ = child.wait().await;
                 return Err(anyhow::anyhow!("Canceled by user"));
             }
             line_res = stdout_reader.next_line() => {
@@ -1274,25 +1346,40 @@ async fn run_reddit_headless_dom_download(
         let yt_stdout = yt_child.stdout.take().expect("Stdout missing");
         let mut yt_reader = BufReader::new(yt_stdout).lines();
 
-        while let Ok(Some(line)) = yt_reader.next_line().await {
-            if line.starts_with("[download]") {
-                if line.contains("Destination:") {
-                    if let Some(dest) = line.split("Destination:").nth(1) {
-                        let _ = tx.send(WorkerMessage::Filename { id: item_id, file_name: dest.trim().to_string() }).await;
-                    }
-                } else if line.contains('%') {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    if let Some(pct_idx) = parts.iter().position(|p| p.ends_with('%')) {
-                        let percent_str = &parts[pct_idx][..parts[pct_idx].len()-1];
-                        if let Ok(percent) = percent_str.parse::<f32>() {
-                            if parts.len() > pct_idx + 2 && parts[pct_idx + 1] == "of" {
-                                let mut size_str = parts[pct_idx + 2];
-                                if size_str.starts_with('~') { size_str = &size_str[1..]; }
-                                let total_bytes = parse_size(size_str);
-                                let dl_bytes = (percent as f64 / 100.0) * total_bytes;
-                                let _ = tx.send(WorkerMessage::Progress { id: item_id, percent, dl_bytes, total_bytes }).await;
+        loop {
+            tokio::select! {
+                _ = &mut *cancel_rx => {
+                    let _ = yt_child.kill().await;
+                    let _ = yt_child.wait().await;
+                    return Err(anyhow::anyhow!("Canceled by user"));
+                }
+                line_res = yt_reader.next_line() => {
+                    match line_res {
+                        Ok(Some(line)) => {
+                            if line.starts_with("[download]") {
+                                if line.contains("Destination:") {
+                                    if let Some(dest) = line.split("Destination:").nth(1) {
+                                        let _ = tx.send(WorkerMessage::Filename { id: item_id, file_name: dest.trim().to_string() }).await;
+                                    }
+                                } else if line.contains('%') {
+                                    let parts: Vec<&str> = line.split_whitespace().collect();
+                                    if let Some(pct_idx) = parts.iter().position(|p| p.ends_with('%')) {
+                                        let percent_str = &parts[pct_idx][..parts[pct_idx].len()-1];
+                                        if let Ok(percent) = percent_str.parse::<f32>() {
+                                            if parts.len() > pct_idx + 2 && parts[pct_idx + 1] == "of" {
+                                                let mut size_str = parts[pct_idx + 2];
+                                                if size_str.starts_with('~') { size_str = &size_str[1..]; }
+                                                let total_bytes = parse_size(size_str);
+                                                let dl_bytes = (percent as f64 / 100.0) * total_bytes;
+                                                let _ = tx.send(WorkerMessage::Progress { id: item_id, percent, dl_bytes, total_bytes }).await;
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
+                        Ok(None) => break,
+                        Err(_) => break,
                     }
                 }
             }
@@ -1373,6 +1460,7 @@ async fn run_gallery_dl_download(
         tokio::select! {
             _ = &mut *cancel_rx => {
                 let _ = child.kill().await;
+                let _ = child.wait().await;
                 return Err(anyhow::anyhow!("Canceled by user"));
             }
             line_res = stdout_reader.next_line() => {
@@ -1506,6 +1594,7 @@ async fn execute_download(
         tokio::select! {
             _ = &mut cancel_rx => {
                 let _ = child.kill().await;
+                let _ = child.wait().await;
                 return Err(anyhow::anyhow!("Canceled by user"));
             }
             line_res = stdout_reader.next_line() => {
@@ -1516,6 +1605,13 @@ async fn execute_download(
                                 downloaded_any = true;
                                 if let Some(dest) = line.split("Destination:").nth(1) {
                                     let _ = tx.send(WorkerMessage::Filename { id: item_id, file_name: dest.trim().to_string() }).await;
+                                }
+                            } else if line.contains("has already been downloaded") {
+                                downloaded_any = true;
+                                if let Some(dest) = line.strip_prefix("[download]") {
+                                    if let Some(path_part) = dest.split("has already been downloaded").next() {
+                                        let _ = tx.send(WorkerMessage::Filename { id: item_id, file_name: path_part.trim().to_string() }).await;
+                                    }
                                 }
                             } else if line.contains('%') {
                                 downloaded_any = true;
@@ -1809,8 +1905,9 @@ async fn main() -> Result<()> {
                             || item.title == "Image Gallery"
                             || item.title == "Reddit Post"
                         {
-                            if let Some(stem) = Path::new(&file_name).file_stem() {
-                                item.title = stem.to_string_lossy().to_string();
+                            let cleaned = clean_title_from_filename(&file_name);
+                            if !cleaned.is_empty() {
+                                item.title = cleaned;
                                 item.platform = detect_platform_folder(&item.url, &item.platform).to_string();
                                 item.description = "Metadata dynamically updated during download...".into();
                             }
@@ -1839,6 +1936,14 @@ async fn main() -> Result<()> {
                     app.active_downloads.remove(&id);
                     if let Some(idx) = app.queue.iter().position(|i| i.id == id) {
                         app.queue[idx].stats.smoothed_speed = 0.0;
+
+                        // If this item was skipped by the user, run a final sweep now that yt-dlp has fully exited
+                        if app.queue[idx].status == ItemStatus::Skipped {
+                            cleanup_item_garbage(&app.queue[idx]);
+                            app.queue[idx].target_files.clear();
+                            continue;
+                        }
+
                         if !was_killed && app.queue[idx].status == ItemStatus::Downloading {
                             if success {
                                 app.queue[idx].status = ItemStatus::Completed;
@@ -2097,16 +2202,22 @@ async fn main() -> Result<()> {
                             KeyCode::F(7) => { app.nuke_queue_and_cancel().await; }
                             KeyCode::F(8) => { app.show_auth_modal = true; }
                             KeyCode::F(9) => {
-                                let target_dir = if let Some(idx) = app.queue_state.selected() {
-                                    app.queue.get(idx).map(get_base_download_dir)
-                                } else {
-                                    None
-                                }.unwrap_or_else(|| {
-                                    let mut p = dirs::download_dir().unwrap_or_else(|| PathBuf::from("."));
-                                    p.push("MediaDownloader");
-                                    p
-                                });
-                                open_folder_in_os(&target_dir);
+                                if let Some(idx) = app.queue_state.selected() {
+                                    if let Some(item) = app.queue.get(idx) {
+                                        match item.status {
+                                            ItemStatus::Completed | ItemStatus::Downloading | ItemStatus::Paused => {
+                                                let target_dir = get_base_download_dir(item);
+                                                open_folder_in_os(&target_dir);
+                                            }
+                                            ItemStatus::Skipped => {
+                                                app.set_input_warning("⚠️ Cannot open folder: This item was skipped and its files were deleted.");
+                                            }
+                                            _ => {
+                                                app.set_input_warning("⚠️ Cannot open folder: This item has not been downloaded yet.");
+                                            }
+                                        }
+                                    }
+                                }
                             }
                             KeyCode::Delete => {
                                 if let Some(idx) = app.queue_state.selected() {
@@ -2130,7 +2241,8 @@ async fn main() -> Result<()> {
                                 } else if let Some(idx) = app.queue_state.selected() {
                                     let status = app.queue[idx].status.clone();
                                     match status {
-                                        ItemStatus::New | ItemStatus::Failed(_) | ItemStatus::Ready | ItemStatus::Skipped => {
+                                        // Skipped items are permanently dead and cannot be restarted with [Enter]
+                                        ItemStatus::New | ItemStatus::Failed(_) | ItemStatus::Ready => {
                                             let raw_url = app.queue[idx].url.clone();
                                             app.queue[idx].retries = 0;
                                             app.queue[idx].resolved_auth = if app.auth_mode == AuthMode::SmartAuto {
@@ -2145,6 +2257,12 @@ async fn main() -> Result<()> {
                                             } else {
                                                 let plat = detect_platform_folder(&raw_url, "");
                                                 app.history.record_search(&raw_url, plat);
+
+                                                // If a playlist or batch track already has a chosen format preset, re-queue it directly
+                                                if app.queue[idx].chosen_format_id.is_some() || app.queue[idx].is_image {
+                                                    app.queue[idx].status = ItemStatus::Queued;
+                                                    continue;
+                                                }
 
                                                 app.queue[idx].status = ItemStatus::FetchingMeta;
                                                 app.queue[idx].title = "Inspecting...".into();
