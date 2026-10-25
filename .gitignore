@@ -1,0 +1,28 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# Ignore local scratch files
+src/project_summary.md
+src/secod.rs
+src/second.rs
+
+# Personal authentication & cookies (NEVER UPLOAD TO GITHUB)
+cookies.txt
+*.cookies
+history.json
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temporary media files
+*.part
+*.ytdl
+*.mp4
+*.mp3
+*.jpg
+*.png
+*.webp

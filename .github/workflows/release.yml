@@ -1,0 +1,58 @@
+name: Build and Release Binaries
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: rust_media_downloader
+            asset_name: rust_media_downloader-linux-x86_64
+          - os: windows-latest
+            artifact_name: rust_media_downloader.exe
+            asset_name: rust_media_downloader-windows-x86_64.exe
+          - os: macos-latest
+            artifact_name: rust_media_downloader
+            asset_name: rust_media_downloader-macos-arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux Clipboard & X11 Headers
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb1-dev libxfixes-dev libxkbcommon-dev
+
+      - name: Install Stable Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Optimized Release Binary
+        run: cargo build --release
+
+      - name: Rename Binary for Release
+        shell: bash
+        run: cp target/release/${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.asset_name }}
+          generate_release_notes: true
