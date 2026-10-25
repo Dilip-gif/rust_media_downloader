@@ -4,18 +4,40 @@ An ultra-fast, asynchronous Terminal UI (TUI) Media Downloader and Multimodal In
 
 ---
 
-## ⚡ One-Command Installation (Linux & macOS)
+## ⚡ One-Command Installation
 
-Paste this single command into your terminal to install dependencies (`yt-dlp`, `gallery-dl`, `ffmpeg`, `curl_cffi`) and the `media-tui` binary:
+Automatically installs all required dependencies (`yt-dlp`, `gallery-dl`, `ffmpeg`, `curl_cffi`) and sets up the global `media-tui` command:
 
+### 🐧 Linux & 🍎 macOS (Terminal)
 ```bash
 curl -fsSL [https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/install.sh](https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/install.sh) | bash
 ```
 
-Then launch from anywhere by typing:
+### 🪟 Windows (PowerShell)
+```powershell
+irm [https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/install.ps1](https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/install.ps1) | iex
+```
 
+### 🚀 Launch Anywhere
+Once installed, simply type this in any terminal window:
 ```bash
 media-tui
+```
+
+---
+
+## 🗑️ One-Command Uninstall
+
+Cleanly removes the `media-tui` binary and history cache while keeping your downloaded media files safe:
+
+**Linux & macOS:**
+```bash
+curl -fsSL [https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/uninstall.sh](https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/uninstall.sh) | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm [https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/uninstall.ps1](https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/uninstall.ps1) | iex
 ```
 
 ---
