@@ -10,12 +10,12 @@ Automatically installs all required dependencies (`yt-dlp`, `gallery-dl`, `ffmpe
 
 ### 🐧 Linux & 🍎 macOS (Terminal)
 ```bash
-curl -fsSL [https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/install.sh](https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/install.sh) | bash
+curl -fsSL https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/install.sh | bash
 ```
 
 ### 🪟 Windows (PowerShell)
 ```powershell
-irm [https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/install.ps1](https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/install.ps1) | iex
+irm https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/install.ps1 | iex
 ```
 
 ### 🚀 Launch Anywhere
@@ -32,12 +32,12 @@ Cleanly removes the `media-tui` binary and history cache while keeping your down
 
 **Linux & macOS:**
 ```bash
-curl -fsSL [https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/uninstall.sh](https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/uninstall.sh) | bash
+curl -fsSL https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/uninstall.sh | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm [https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/uninstall.ps1](https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/uninstall.ps1) | iex
+irm https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main/uninstall.ps1 | iex
 ```
 
 ---
