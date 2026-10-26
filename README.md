@@ -1,6 +1,4 @@
-BASE_URL="https://raw.githubusercontent.com/Dilip-gif/rust_media_downloader/main"
 
-cat << EOF > README.md
 # 🚀 Rust Media Downloader (\`media-tui\` & \`media-popup\`)
 
 An ultra-fast, cross-platform Media Downloader suite built in **Rust** featuring two interfaces:
