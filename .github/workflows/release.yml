@@ -19,14 +19,20 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact_name: rust_media_downloader
-            asset_name: rust_media_downloader-linux-x86_64
+            tui_bin: rust_media_downloader
+            popup_bin: media_popup
+            tui_asset: rust_media_downloader-linux-x86_64
+            popup_asset: media_popup-linux-x86_64
           - os: windows-latest
-            artifact_name: rust_media_downloader.exe
-            asset_name: rust_media_downloader-windows-x86_64.exe
+            tui_bin: rust_media_downloader.exe
+            popup_bin: media_popup.exe
+            tui_asset: rust_media_downloader-windows-x86_64.exe
+            popup_asset: media_popup-windows-x86_64.exe
           - os: macos-latest
-            artifact_name: rust_media_downloader
-            asset_name: rust_media_downloader-macos-arm64
+            tui_bin: rust_media_downloader
+            popup_bin: media_popup
+            tui_asset: rust_media_downloader-macos-arm64
+            popup_asset: media_popup-macos-arm64
 
     runs-on: ${{ matrix.os }}
 
@@ -34,25 +40,29 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Linux Clipboard & X11 Headers
+      - name: Install Linux X11, OpenGL & Clipboard Headers
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxcb1-dev libxfixes-dev libxkbcommon-dev
+          sudo apt-get install -y libxcb1-dev libxfixes-dev libxkbcommon-dev libgl1-mesa-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev
 
       - name: Install Stable Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build Optimized Release Binary
-        run: cargo build --release
+      - name: Build Optimized Release Binaries (TUI + GUI Popup)
+        run: cargo build --release --bins
 
-      - name: Rename Binary for Release
+      - name: Rename Binaries for Release
         shell: bash
-        run: cp target/release/${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+        run: |
+          cp target/release/${{ matrix.tui_bin }} ${{ matrix.tui_asset }}
+          cp target/release/${{ matrix.popup_bin }} ${{ matrix.popup_asset }}
 
       - name: Upload to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.asset_name }}
+          files: |
+            ${{ matrix.tui_asset }}
+            ${{ matrix.popup_asset }}
           generate_release_notes: true

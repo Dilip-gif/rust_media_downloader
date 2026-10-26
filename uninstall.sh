@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
 set -e
 
-BIN_NAME="media-tui"
 INSTALL_DIR="$HOME/.local/bin"
 DATA_DIR="$HOME/.local/share/MediaDownloader"
 
-echo "🗑️ Uninstalling Rust Media Downloader ($BIN_NAME)..."
+echo "🗑️ Uninstalling Rust Media Downloader (media-tui & media-popup)..."
 
-if [ -f "$INSTALL_DIR/$BIN_NAME" ]; then
-    rm -f "$INSTALL_DIR/$BIN_NAME"
-    echo "✔ Removed binary: $INSTALL_DIR/$BIN_NAME"
-fi
+rm -f "$INSTALL_DIR/media-tui" "$INSTALL_DIR/media-popup"
+echo "✔ Removed binaries from $INSTALL_DIR"
 
 if [ -d "$DATA_DIR" ]; then
     rm -rf "$DATA_DIR"

@@ -31,6 +31,8 @@ use tokio::{
     sync::{mpsc, Mutex},
 };
 
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+const GITHUB_REPO: &str = "Dilip-gif/rust_media_downloader";
 const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 // Headless Chrome (--dump-dom) + Shreddit DOM Scraper with Binary Image Magic-Byte Verification
@@ -56,7 +58,6 @@ try:
 except Exception:
     pass
 
-# Stage 1: Fetch Shreddit HTML DOM via Chrome TLS Impersonation + Browser Cookies
 try:
     from curl_cffi import requests as cffi_requests
     page_headers = {
@@ -69,7 +70,6 @@ try:
 except Exception:
     pass
 
-# Stage 2: Spawn Real Headless Chrome (--headless=new --dump-dom) if needed
 def dump_dom_with_headless_browser(target_url):
     browsers = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "brave-browser", "msedge", "chrome"]
     for b in browsers:
@@ -115,7 +115,6 @@ if title_m:
     if cleaned:
         safe_title = cleaned
 
-# 1. Check for Reddit Video (v.redd.it) in the DOM
 vid_m = re.search(r'https://v\.redd\.it/([a-zA-Z0-9]+)', dom_html)
 if vid_m:
     vid_id = vid_m.group(1)
@@ -123,9 +122,7 @@ if vid_m:
     print(f"REDDIT_VIDEO::{safe_title}_{post_id}::{hls_url}", flush=True)
     sys.exit(0)
 
-# 2. Extract Original & Gallery Images (including high-res srcset links) from the DOM
 raw_candidates = []
-
 for m in re.finditer(r'content-href="(https://(?:i|preview)\.redd\.it/[^"]+)"', dom_html):
     raw_candidates.append(html.unescape(m.group(1)))
 
@@ -174,7 +171,6 @@ if not ordered_keys:
     sys.stderr.write("ERROR: Headless DOM could not find media on this Reddit page.\n")
     sys.exit(1)
 
-# Verify binary magic bytes so HTML wrapper pages ("text/html") are NEVER saved as images
 def detect_image_magic_ext(data):
     if not data or len(data) < 64:
         return None
@@ -245,6 +241,71 @@ if downloaded == 0:
     sys.stderr.write("ERROR: Failed to download verified image binaries from Reddit CDN.\n")
     sys.exit(1)
 "#;
+
+// --- GITHUB AUTO-UPDATE CHECKER ---
+
+fn version_is_newer(latest_tag: &str, current_ver: &str) -> bool {
+    let parse_ver = |v: &str| -> Vec<u32> {
+        v.trim_start_matches('v')
+            .split('.')
+            .filter_map(|s| s.parse::<u32>().ok())
+            .collect()
+    };
+    let l = parse_ver(latest_tag);
+    let c = parse_ver(current_ver);
+    l > c
+}
+
+async fn check_github_for_updates() -> Option<String> {
+    let api_url = format!("https://api.github.com/repos/{}/releases/latest", GITHUB_REPO);
+    let out = tokio::time::timeout(
+        Duration::from_secs(8),
+        Command::new("curl")
+            .arg("-fsSL")
+            .arg("-A")
+            .arg("rust-media-downloader-tui")
+            .arg(&api_url)
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !out.status.success() {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+    let tag = v.get("tag_name")?.as_str()?;
+    if version_is_newer(tag, APP_VERSION) {
+        Some(tag.to_string())
+    } else {
+        None
+    }
+}
+
+fn run_interactive_self_update() {
+    println!("🚀 Launching Rust Media Downloader Auto-Updater...");
+    match std::env::consts::OS {
+        "windows" => {
+            let cmd = format!(
+                "irm https://raw.githubusercontent.com/{}/main/install.ps1 | iex",
+                GITHUB_REPO
+            );
+            let _ = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-Command", &cmd])
+                .status();
+        }
+        _ => {
+            let cmd = format!(
+                "curl -fsSL https://raw.githubusercontent.com/{}/main/install.sh | bash",
+                GITHUB_REPO
+            );
+            let _ = std::process::Command::new("bash")
+                .args(["-c", &cmd])
+                .status();
+        }
+    }
+}
 
 // --- PERSISTENT HISTORY ENGINE ---
 
@@ -598,12 +659,12 @@ fn remove_sidecar_subtitles_in_dir(dir: &Path) {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum AuthMode {
-    SmartAuto,      // Guest first; auto-chains cookies.txt -> Chrome -> Brave -> Firefox -> Edge on login/age walls
-    Chrome,         // --cookies-from-browser chrome
-    Firefox,        // --cookies-from-browser firefox
-    Brave,          // --cookies-from-browser brave
-    Edge,           // --cookies-from-browser edge
-    CookiesFile,    // --cookies cookies.txt
+    SmartAuto,
+    Chrome,
+    Firefox,
+    Brave,
+    Edge,
+    CookiesFile,
 }
 
 impl AuthMode {
@@ -794,6 +855,7 @@ pub struct QueueItem {
 }
 
 enum WorkerMessage {
+    UpdateAvailable { tag: String },
     UrlResolved { id: usize, resolved_url: String },
     MetaFetched { id: usize, info: YtDlpInfo, resolved_auth: Option<AuthMode> },
     ImageDetected { id: usize, platform: String, resolved_auth: Option<AuthMode> },
@@ -811,6 +873,8 @@ enum WorkerMessage {
 struct App {
     input_url: String,
     input_warning: Option<(String, Instant)>,
+    available_update: Option<String>,
+    trigger_self_update_exit: bool,
     queue: Vec<QueueItem>,
     queue_state: ListState,
     format_state: ListState,
@@ -843,6 +907,8 @@ impl App {
         Self {
             input_url: String::new(),
             input_warning: None,
+            available_update: None,
+            trigger_self_update_exit: false,
             queue: Vec::new(),
             queue_state,
             format_state,
@@ -940,11 +1006,9 @@ impl App {
         self.queue_state.select(None);
     }
 
-    // Strictly skips the item currently highlighted by the user in the Media Queue window
     async fn skip_active_download(&mut self) {
         let mut target_idx = None;
 
-        // 1. Always prioritize the exact item the user's cursor is hovering over in the Media Queue
         if let Some(sel_idx) = self.queue_state.selected() {
             if sel_idx < self.queue.len() {
                 match self.queue[sel_idx].status {
@@ -961,7 +1025,6 @@ impl App {
             }
         }
 
-        // 2. Fallback only if no skippable item is highlighted: pick the top-most Downloading/Paused item in queue order
         if target_idx.is_none() {
             target_idx = self.queue.iter().position(|i| {
                 i.status == ItemStatus::Downloading || i.status == ItemStatus::Paused
@@ -978,7 +1041,6 @@ impl App {
             self.active_downloads.remove(&id);
         }
 
-        // Brief wait so yt-dlp releases file locks on unmerged video streams (.f137.mp4) before we sweep
         tokio::time::sleep(Duration::from_millis(60)).await;
 
         cleanup_item_garbage(&self.queue[idx]);
@@ -1060,7 +1122,6 @@ impl App {
 
 // --- WORKER HELPERS & AGGRESSIVE CLEANUP ---
 
-// Strips yt-dlp intermediate stream suffixes like ".f137", ".f248", ".f140", ".temp" from a file stem
 fn strip_ytdlp_format_suffix(stem: &str) -> &str {
     let mut s = stem.strip_suffix(".temp").unwrap_or(stem);
     if let Some(dot_idx) = s.rfind('.') {
@@ -1075,24 +1136,44 @@ fn strip_ytdlp_format_suffix(stem: &str) -> &str {
     s
 }
 
-// Extracts the clean title from a yt-dlp destination path (removing ".f137" and "_1080p" suffixes)
+fn normalize_ytdlp_unicode(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            '｜' | '│' | '┃' | '¦' => '|',
+            '：' => ':',
+            '？' => '?',
+            '＂' | '“' | '”' => '"',
+            '＇' | '‘' | '’' => '\'',
+            '⧸' | '╱' | '∕' => '/',
+            '⧹' | '╲' => '\\',
+            '＊' => '*',
+            '＜' => '<',
+            '＞' => '>',
+            _ => c,
+        })
+        .collect()
+}
+
 fn clean_title_from_filename(file_name: &str) -> String {
     let raw_stem = Path::new(file_name)
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
     let without_fmt = strip_ytdlp_format_suffix(&raw_stem);
-    // Also strip trailing "_1080p", "_720p", "_1920x1080", "_NA" resolution tags for UI display
-    if let Some(u_idx) = without_fmt.rfind('_') {
+    let stripped = if let Some(u_idx) = without_fmt.rfind('_') {
         let tail = &without_fmt[u_idx + 1..];
         let is_res = tail == "NA"
             || (tail.ends_with('p') && tail[..tail.len() - 1].chars().all(|c| c.is_ascii_digit()))
             || (tail.contains('x') && tail.chars().all(|c| c.is_ascii_digit() || c == 'x'));
         if is_res && u_idx > 0 {
-            return without_fmt[..u_idx].to_string();
+            &without_fmt[..u_idx]
+        } else {
+            without_fmt
         }
-    }
-    without_fmt.to_string()
+    } else {
+        without_fmt
+    };
+    normalize_ytdlp_unicode(stripped)
 }
 
 fn cleanup_item_garbage(item: &QueueItem) {
@@ -1138,9 +1219,7 @@ fn cleanup_item_garbage(item: &QueueItem) {
                 let lower_name = name.to_lowercase();
                 let safe_name = name.replace(|c: char| !c.is_alphanumeric(), "").to_lowercase();
 
-                // 1. If the file starts with the exact base prefix of any tracked stream (catches Title_1080p.f137.mp4 & .f140.m4a.part!)
                 let matches_prefix = base_prefixes.iter().any(|pref| !pref.is_empty() && lower_name.starts_with(pref));
-                // 2. Or if it matches the alphanumeric title
                 let matches_title = has_valid_title && safe_name.contains(&safe_title);
 
                 if matches_prefix || matches_title {
@@ -1241,7 +1320,6 @@ async fn fetch_metadata(url: &str, auth_mode: AuthMode) -> Result<(YtDlpInfo, Op
     Ok((info, Some(auth_mode)))
 }
 
-// Headless Chrome (--dump-dom) + Shreddit DOM Downloader for Reddit
 async fn run_reddit_headless_dom_download(
     item: &mut QueueItem,
     tx: &mpsc::Sender<WorkerMessage>,
@@ -1673,8 +1751,13 @@ async fn execute_download(
 fn get_quick_presets() -> Vec<FormatChoice> {
     vec![
         FormatChoice {
+            id: "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best".into(),
+            label: "🎬 Best Video (Max 1080p Full HD + Embedded CC)".into(),
+            ext: "mp4".into(), est_size: "Auto".into(), is_audio: false, is_image: false,
+        },
+        FormatChoice {
             id: "bestvideo+bestaudio/best".into(),
-            label: "⭐ High Quality Video (1080p/4K + Embedded CC)".into(),
+            label: "💎 Ultra 4K / 8K Video (Unrestricted Max + CC)".into(),
             ext: "mp4".into(), est_size: "Auto".into(), is_audio: false, is_image: false,
         },
         FormatChoice {
@@ -1782,6 +1865,14 @@ async fn main() -> Result<()> {
     let (worker_tx, worker_rx) = mpsc::channel(100);
     let mut app = App::new(worker_tx.clone(), worker_rx);
 
+    // Background GitHub Release Auto-Update Checker
+    let upd_tx = worker_tx.clone();
+    tokio::spawn(async move {
+        if let Some(tag) = check_github_for_updates().await {
+            let _ = upd_tx.send(WorkerMessage::UpdateAvailable { tag }).await;
+        }
+    });
+
     let clip_tx = worker_tx.clone();
     std::thread::spawn(move || {
         if let Ok(mut clipboard) = Clipboard::new() {
@@ -1824,6 +1915,9 @@ async fn main() -> Result<()> {
 
         while let Ok(msg) = app.worker_rx.try_recv() {
             match msg {
+                WorkerMessage::UpdateAvailable { tag } => {
+                    app.available_update = Some(tag);
+                }
                 WorkerMessage::ClipboardCaptured { url } => {
                     let _ = app.add_urls_to_queue(url);
                 }
@@ -1852,7 +1946,7 @@ async fn main() -> Result<()> {
                         }
 
                         item.resolved_auth = resolved_auth;
-                        item.title = info.title.clone().unwrap_or_else(|| "Untitled".into());
+                        item.title = normalize_ytdlp_unicode(&info.title.clone().unwrap_or_else(|| "Untitled".into()));
                         let ext_key = info.extractor_key.clone().unwrap_or_else(|| "Web".into());
                         item.platform = detect_platform_folder(&item.url, &ext_key).to_string();
                         item.description = info.description.clone().unwrap_or_default();
@@ -1937,7 +2031,6 @@ async fn main() -> Result<()> {
                     if let Some(idx) = app.queue.iter().position(|i| i.id == id) {
                         app.queue[idx].stats.smoothed_speed = 0.0;
 
-                        // If this item was skipped by the user, run a final sweep now that yt-dlp has fully exited
                         if app.queue[idx].status == ItemStatus::Skipped {
                             cleanup_item_garbage(&app.queue[idx]);
                             app.queue[idx].target_files.clear();
@@ -1998,7 +2091,6 @@ async fn main() -> Result<()> {
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
         if event::poll(timeout)? {
             match event::read()? {
-                // SMART PASTE SHIELD: Intercepts terminal paste events before non-URL code can flood the input box
                 Event::Paste(pasted_text) => {
                     if !app.show_auth_modal && !app.show_history_modal {
                         let combined = if app.input_url.is_empty() {
@@ -2015,7 +2107,6 @@ async fn main() -> Result<()> {
                     }
                 }
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    // 1. Handle [F4] / [F12] Persistent History Modal
                     if app.show_history_modal {
                         let len = app.current_history_len();
                         match key.code {
@@ -2092,7 +2183,6 @@ async fn main() -> Result<()> {
                         continue;
                     }
 
-                    // 2. Handle [F8] Auth Mode Selector Modal
                     if app.show_auth_modal {
                         let modes = AuthMode::all();
                         match key.code {
@@ -2119,7 +2209,6 @@ async fn main() -> Result<()> {
                         continue;
                     }
 
-                    // 3. Handle Format Selection Modal
                     let active_format_idx = app.queue.iter().position(|i| i.status == ItemStatus::FormatSelect);
 
                     if let Some(idx) = active_format_idx {
@@ -2148,7 +2237,7 @@ async fn main() -> Result<()> {
 
                                         for e in entries {
                                             let entry_url = e.url.or(e.id.map(|id| format!("https://youtu.be/{}", id))).unwrap_or_default();
-                                            let entry_title = e.title.unwrap_or_else(|| "Playlist Track".into());
+                                            let entry_title = normalize_ytdlp_unicode(&e.title.unwrap_or_else(|| "Playlist Track".into()));
                                             if entry_url.is_empty() { continue; }
 
                                             let item_id = app.next_id;
@@ -2193,6 +2282,13 @@ async fn main() -> Result<()> {
                     } else {
                         match key.code {
                             KeyCode::Esc => break,
+                            KeyCode::F(3) => {
+                                if app.available_update.is_some() {
+                                    app.nuke_queue_and_cancel().await;
+                                    app.trigger_self_update_exit = true;
+                                    break;
+                                }
+                            }
                             KeyCode::F(4) | KeyCode::F(12) => {
                                 app.show_history_modal = true;
                                 app.history_state.select(Some(0));
@@ -2258,7 +2354,6 @@ async fn main() -> Result<()> {
                                                 let plat = detect_platform_folder(&raw_url, "");
                                                 app.history.record_search(&raw_url, plat);
 
-                                                // If a playlist or batch track already has a chosen format preset, re-queue it directly
                                                 if app.queue[idx].chosen_format_id.is_some() || app.queue[idx].is_image {
                                                     app.queue[idx].status = ItemStatus::Queued;
                                                     continue;
@@ -2355,6 +2450,11 @@ async fn main() -> Result<()> {
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableBracketedPaste)?;
     terminal.show_cursor()?;
+
+    if app.trigger_self_update_exit {
+        run_interactive_self_update();
+    }
+
     Ok(())
 }
 
@@ -2366,9 +2466,15 @@ fn ui(f: &mut Frame, app: &mut App) {
         .constraints([ Constraint::Length(3), Constraint::Min(8), Constraint::Length(10), Constraint::Length(1) ])
         .split(f.area());
 
+    let update_banner = if let Some(ref tag) = app.available_update {
+        format!(" | ⬆ Update {} Available! Press [F3] ", tag)
+    } else {
+        String::new()
+    };
+
     let (header_title, border_color, display_text, text_color) = if let Some((ref warn, _)) = app.input_warning {
         (
-            format!(" Smart Input Shield [{}] ", app.auth_mode.badge()),
+            format!(" Smart Input Shield v{} [{}]{} ", APP_VERSION, app.auth_mode.badge(), update_banner),
             Color::LightRed,
             warn.as_str(),
             Color::LightRed,
@@ -2376,10 +2482,12 @@ fn ui(f: &mut Frame, app: &mut App) {
     } else {
         (
             format!(
-                " Add URL(s) to Queue (Paste link/playlist + Enter | Ctrl+U Clear) [{}] ",
-                app.auth_mode.badge()
+                " Add URL(s) to Queue v{} (Paste link/playlist + Enter | Ctrl+U Clear) [{}]{} ",
+                APP_VERSION,
+                app.auth_mode.badge(),
+                update_banner
             ),
-            Color::White,
+            if app.available_update.is_some() { Color::LightGreen } else { Color::White },
             app.input_url.as_str(),
             Color::Yellow,
         )
@@ -2566,8 +2674,14 @@ fn ui(f: &mut Frame, app: &mut App) {
             Span::styled("[Esc/Bksp]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Close Modal"),
         ])
     } else {
-        Line::from(vec![
+        let mut spans = vec![
             Span::styled("[Enter]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Inspect | "),
+        ];
+        if let Some(ref tag) = app.available_update {
+            spans.push(Span::styled("[F3]", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)));
+            spans.push(Span::raw(format!(" Update ({}) | ", tag)));
+        }
+        spans.extend(vec![
             Span::styled("[F4]", Style::default().fg(Color::LightMagenta).add_modifier(Modifier::BOLD)), Span::raw(" History | "),
             Span::styled("[F5]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Pause | "),
             Span::styled("[F6]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Skip | "),
@@ -2576,7 +2690,8 @@ fn ui(f: &mut Frame, app: &mut App) {
             Span::styled("[F9]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)), Span::raw(" Folder | "),
             Span::styled("[Del]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Del | "),
             Span::styled("[Esc]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Exit"),
-        ])
+        ]);
+        Line::from(spans)
     };
     f.render_widget(Paragraph::new(help_text), main_chunks[3]);
 
