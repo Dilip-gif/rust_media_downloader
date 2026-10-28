@@ -41,6 +41,7 @@ import sys, os, re, json, html, urllib.parse, subprocess, tempfile, shutil
 
 url = sys.argv[1].split('?')[0].rstrip('/')
 out_dir = sys.argv[2]
+seq_prefix = sys.argv[4] if len(sys.argv) > 4 else ""
 os.makedirs(out_dir, exist_ok=True)
 
 post_id_match = re.search(r'/comments/([a-z0-9]+)', url, re.I)
@@ -119,7 +120,7 @@ vid_m = re.search(r'https://v\.redd\.it/([a-zA-Z0-9]+)', dom_html)
 if vid_m:
     vid_id = vid_m.group(1)
     hls_url = f"https://v.redd.it/{vid_id}/HLSPlaylist.m3u8"
-    print(f"REDDIT_VIDEO::{safe_title}_{post_id}::{hls_url}", flush=True)
+    print(f"REDDIT_VIDEO::{seq_prefix}{safe_title}_{post_id}::{hls_url}", flush=True)
     sys.exit(0)
 
 raw_candidates = []
@@ -230,7 +231,7 @@ for idx, key in enumerate(ordered_keys, 1):
         img_bytes, real_ext = fetch_verified_image_bytes(signed_url)
 
     if img_bytes and real_ext:
-        out_name = f"{safe_title}_{post_id}_{idx}{real_ext}" if len(ordered_keys) > 1 else f"{safe_title}_{post_id}{real_ext}"
+        out_name = f"{seq_prefix}{safe_title}_{post_id}_{idx}{real_ext}" if len(ordered_keys) > 1 else f"{seq_prefix}{safe_title}_{post_id}{real_ext}"
         out_path = os.path.join(out_dir, out_name)
         with open(out_path, "wb") as f:
             f.write(img_bytes)
@@ -241,6 +242,18 @@ if downloaded == 0:
     sys.stderr.write("ERROR: Failed to download verified image binaries from Reddit CDN.\n")
     sys.exit(1)
 "#;
+
+// --- DYNAMIC ZERO-PADDED SEQUENCE FORMATTER ---
+// Total 9 -> "01_", Total 25 -> "01_", Total 100 -> "001_"
+fn format_sequence_prefix(seq_index: Option<(usize, usize)>) -> String {
+    if let Some((idx, total)) = seq_index {
+        if total > 1 {
+            let width = total.to_string().len().max(2);
+            return format!("{:0width$}_", idx, width = width);
+        }
+    }
+    String::new()
+}
 
 // --- GITHUB AUTO-UPDATE CHECKER ---
 
@@ -849,7 +862,8 @@ pub struct QueueItem {
     pub stats: DownloadStats,
     pub started_at: Option<Instant>,
     pub playlist_entries: Option<Vec<FlatEntry>>,
-    pub target_folder: Option<String>, 
+    pub target_folder: Option<String>,
+    pub sequence_index: Option<(usize, usize)>,
     pub retries: u8,
     pub resolved_auth: Option<AuthMode>,
 }
@@ -965,16 +979,16 @@ impl App {
                 description: String::new(), status: ItemStatus::New, available_formats: Vec::new(),
                 chosen_format_id: None, is_audio: false, is_image: false, target_files: Vec::new(),
                 stats: DownloadStats::default(), started_at: None, playlist_entries: None,
-                target_folder: None, retries: 0, resolved_auth: initial_auth,
+                target_folder: None, sequence_index: None, retries: 0, resolved_auth: initial_auth,
             }
         } else {
             let entries: Vec<FlatEntry> = valid_urls.into_iter().map(|u| FlatEntry { id: None, url: Some(u.clone()), title: Some(u) }).collect();
             QueueItem {
                 id: item_id, url: "batch".into(), title: "Batch Download Group".into(), platform: "Multi-Link".into(),
-                description: format!("Contains {} pasted links.", entries.len()), status: ItemStatus::New, 
+                description: format!("Contains {} pasted links (will be auto-numbered).", entries.len()), status: ItemStatus::New, 
                 available_formats: Vec::new(), chosen_format_id: None, is_audio: false, is_image: false,
                 target_files: Vec::new(), stats: DownloadStats::default(), started_at: None,
-                playlist_entries: Some(entries), target_folder: None, retries: 0, resolved_auth: initial_auth,
+                playlist_entries: Some(entries), target_folder: None, sequence_index: None, retries: 0, resolved_auth: initial_auth,
             }
         };
 
@@ -1178,6 +1192,10 @@ fn clean_title_from_filename(file_name: &str) -> String {
 
 fn cleanup_item_garbage(item: &QueueItem) {
     let mut base_prefixes: Vec<String> = Vec::new();
+    let seq_pref = format_sequence_prefix(item.sequence_index);
+    if !seq_pref.is_empty() {
+        base_prefixes.push(seq_pref.to_lowercase());
+    }
 
     for file in &item.target_files {
         let p = Path::new(file);
@@ -1328,6 +1346,7 @@ async fn run_reddit_headless_dom_download(
     let item_id = item.id;
     let img_dir = get_base_download_dir(item);
     let _ = std::fs::create_dir_all(&img_dir);
+    let seq_prefix = format_sequence_prefix(item.sequence_index);
 
     let py_bin = if std::env::consts::OS == "windows" { "python" } else { "python3" };
     let mut cmd = Command::new(py_bin);
@@ -1336,6 +1355,7 @@ async fn run_reddit_headless_dom_download(
         .arg(&item.url)
         .arg(&img_dir)
         .arg(BROWSER_UA)
+        .arg(&seq_prefix)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -1493,9 +1513,14 @@ async fn run_gallery_dl_download(
         return run_reddit_headless_dom_download(item, tx, cancel_rx).await;
     }
 
+    let seq_prefix = format_sequence_prefix(item.sequence_index);
+
     let mut cmd = Command::new(get_gallerydl_cmd());
     if let Some(ref mode) = item.resolved_auth {
         apply_specific_auth(&mut cmd, mode);
+    }
+    if !seq_prefix.is_empty() {
+        cmd.arg("-o").arg(format!("filename={}{{category}}_{{filename}}.{{extension}}", seq_prefix));
     }
     cmd.arg("--user-agent").arg(BROWSER_UA)
        .arg("-D").arg(base_dir)
@@ -1625,26 +1650,37 @@ async fn execute_download(
     
     cmd.arg("--sleep-requests").arg("1").arg("--min-sleep-interval").arg("1");
 
+    // Smart Zero-Padded Sequence Prefix + Upload Date for Playlists & Batches!
+    let seq_prefix = format_sequence_prefix(item.sequence_index);
+    let date_token = if !seq_prefix.is_empty() {
+        "_%(upload_date>%Y-%m-%d,release_date>%Y-%m-%d|Unknown-Date)s"
+    } else {
+        ""
+    };
+
     if let Some(fid) = &item.chosen_format_id {
         if item.is_audio {
+            let tmpl = format!("{}%(title)s{}.%(ext)s", seq_prefix, date_token);
             cmd.arg("-x")
                .arg("--audio-format").arg("mp3")
                .arg("--embed-thumbnail")
                .arg("--add-metadata")
-               .arg("-o").arg(base_dir.join("%(title)s.%(ext)s").to_string_lossy().to_string());
+               .arg("-o").arg(base_dir.join(tmpl).to_string_lossy().to_string());
         } else {
             if fid.contains('+') {
                 cmd.arg("-f").arg(fid).arg("--merge-output-format").arg("mp4");
             } else {
                 cmd.arg("-f").arg(fid);
             }
+            let tmpl = format!("{}%(title)s{}_%(resolution)s.%(ext)s", seq_prefix, date_token);
             cmd.arg("--embed-subs")
                .arg("--sub-langs").arg("orig,en")
                .arg("--embed-thumbnail")
-               .arg("-o").arg(base_dir.join("%(title)s_%(resolution)s.%(ext)s").to_string_lossy().to_string());
+               .arg("-o").arg(base_dir.join(tmpl).to_string_lossy().to_string());
         }
     } else {
-        cmd.arg("-f").arg("best").arg("-o").arg(base_dir.join("%(title)s.%(ext)s").to_string_lossy().to_string());
+        let tmpl = format!("{}%(title)s{}.%(ext)s", seq_prefix, date_token);
+        cmd.arg("-f").arg("best").arg("-o").arg(base_dir.join(tmpl).to_string_lossy().to_string());
     }
     cmd.arg(&item.url).stdout(Stdio::piped()).stderr(Stdio::piped());
 
@@ -1995,7 +2031,8 @@ async fn main() -> Result<()> {
                         item.target_files.push(file_name.clone()); 
                         
                         if item.title.starts_with("http")
-                            || item.title == "Playlist Track"
+                            || item.title.contains("https://")
+                            || item.title.contains("Playlist Track")
                             || item.title == "Image Gallery"
                             || item.title == "Reddit Post"
                         {
@@ -2233,12 +2270,20 @@ async fn main() -> Result<()> {
                                     if let Some(entries) = app.queue[idx].playlist_entries.take() {
                                         let folder_name = app.queue[idx].title.clone();
                                         let is_batch_paste = folder_name == "Batch Download Group";
+                                        let total_entries = entries.len();
+                                        let pad_width = total_entries.to_string().len().max(2);
                                         let mut new_items = Vec::new();
 
-                                        for e in entries {
+                                        for (seq_i, e) in entries.into_iter().enumerate() {
                                             let entry_url = e.url.or(e.id.map(|id| format!("https://youtu.be/{}", id))).unwrap_or_default();
-                                            let entry_title = normalize_ytdlp_unicode(&e.title.unwrap_or_else(|| "Playlist Track".into()));
+                                            let raw_title = normalize_ytdlp_unicode(&e.title.unwrap_or_else(|| "Playlist Track".into()));
                                             if entry_url.is_empty() { continue; }
+
+                                            let entry_title = if total_entries > 1 {
+                                                format!("{:0width$}_{}", seq_i + 1, raw_title, width = pad_width)
+                                            } else {
+                                                raw_title
+                                            };
 
                                             let item_id = app.next_id;
                                             app.next_id += 1;
@@ -2255,6 +2300,7 @@ async fn main() -> Result<()> {
                                                 target_files: Vec::new(), stats: DownloadStats::default(),
                                                 started_at: None, playlist_entries: None,
                                                 target_folder: if is_batch_paste { None } else { Some(folder_name.clone()) },
+                                                sequence_index: if total_entries > 1 { Some((seq_i + 1, total_entries)) } else { None },
                                                 retries: 0, resolved_auth: parent_auth.clone(),
                                             });
                                         }
@@ -2337,7 +2383,6 @@ async fn main() -> Result<()> {
                                 } else if let Some(idx) = app.queue_state.selected() {
                                     let status = app.queue[idx].status.clone();
                                     match status {
-                                        // Skipped items are permanently dead and cannot be restarted with [Enter]
                                         ItemStatus::New | ItemStatus::Failed(_) | ItemStatus::Ready => {
                                             let raw_url = app.queue[idx].url.clone();
                                             app.queue[idx].retries = 0;
@@ -2563,7 +2608,12 @@ fn ui(f: &mut Frame, app: &mut App) {
             Line::from(vec![Span::styled("Save Path:", Style::default().fg(Color::Cyan)), Span::styled(get_base_download_dir(selected_item).to_string_lossy().to_string(), Style::default().fg(Color::DarkGray))]),
         ];
 
-        if let Some(entries) = &selected_item.playlist_entries {
+        if let Some((seq_i, total)) = selected_item.sequence_index {
+            detail_lines.push(Line::from(vec![
+                Span::styled("Sequence: ", Style::default().fg(Color::LightBlue)),
+                Span::raw(format!("Track {} of {} (Auto-Numbered + Upload Date)", seq_i, total)),
+            ]));
+        } else if let Some(entries) = &selected_item.playlist_entries {
             detail_lines.push(Line::from(vec![Span::styled("Tracks:   ", Style::default().fg(Color::LightBlue)), Span::raw(format!("{} items grouped", entries.len()))]));
         }
 

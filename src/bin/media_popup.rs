@@ -5,6 +5,8 @@ use arboard::Clipboard;
 use eframe::egui;
 use serde::{Deserialize, Serialize};
 use std::{
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
@@ -18,6 +20,7 @@ use tokio::{
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const GITHUB_REPO: &str = "Dilip-gif/rust_media_downloader";
+const SINGLE_INSTANCE_PORT: u16 = 49871;
 const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 // --- DYNAMIC QUALITY OPTION STRUCT ---
@@ -103,6 +106,7 @@ import sys, os, re, json, html, urllib.parse, subprocess, tempfile, shutil
 
 url = sys.argv[1].split('?')[0].rstrip('/')
 out_dir = sys.argv[2]
+seq_prefix = sys.argv[4] if len(sys.argv) > 4 else ""
 os.makedirs(out_dir, exist_ok=True)
 
 post_id_match = re.search(r'/comments/([a-z0-9]+)', url, re.I)
@@ -181,7 +185,7 @@ vid_m = re.search(r'https://v\.redd\.it/([a-zA-Z0-9]+)', dom_html)
 if vid_m:
     vid_id = vid_m.group(1)
     hls_url = f"https://v.redd.it/{vid_id}/HLSPlaylist.m3u8"
-    print(f"REDDIT_VIDEO::{safe_title}_{post_id}::{hls_url}", flush=True)
+    print(f"REDDIT_VIDEO::{seq_prefix}{safe_title}_{post_id}::{hls_url}", flush=True)
     sys.exit(0)
 
 raw_candidates = []
@@ -292,7 +296,7 @@ for idx, key in enumerate(ordered_keys, 1):
         img_bytes, real_ext = fetch_verified_image_bytes(signed_url)
 
     if img_bytes and real_ext:
-        out_name = f"{safe_title}_{post_id}_{idx}{real_ext}" if len(ordered_keys) > 1 else f"{safe_title}_{post_id}{real_ext}"
+        out_name = f"{seq_prefix}{safe_title}_{post_id}_{idx}{real_ext}" if len(ordered_keys) > 1 else f"{seq_prefix}{safe_title}_{post_id}{real_ext}"
         out_path = os.path.join(out_dir, out_name)
         with open(out_path, "wb") as f:
             f.write(img_bytes)
@@ -303,6 +307,18 @@ if downloaded == 0:
     sys.stderr.write("ERROR: Failed to download verified image binaries from Reddit CDN.\n")
     sys.exit(1)
 "#;
+
+// --- DYNAMIC ZERO-PADDED SEQUENCE FORMATTER ---
+// Total 9 -> "1_", Total 25 -> "01_", Total 100 -> "001_"
+fn format_sequence_prefix(seq_index: Option<(usize, usize)>) -> String {
+    if let Some((idx, total)) = seq_index {
+        if total > 1 {
+            let width = total.to_string().len().max(2);
+            return format!("{:0width$}_", idx, width = width);
+        }
+    }
+    String::new()
+}
 
 // --- GITHUB AUTO-UPDATE CHECKER & SELF-INSTALLER ---
 
@@ -751,8 +767,12 @@ fn remove_sidecar_subtitles_in_dir(dir: &Path) {
     }
 }
 
-fn cleanup_track_garbage(target_files: &[String], title: &str, target_dir: &Path) {
+fn cleanup_track_garbage(target_files: &[String], title: &str, seq_prefix: &str, target_dir: &Path) {
     let mut base_prefixes: Vec<String> = Vec::new();
+    if !seq_prefix.is_empty() {
+        base_prefixes.push(seq_prefix.to_lowercase());
+    }
+
     for file in target_files {
         let p = Path::new(file);
         let _ = std::fs::remove_file(p);
@@ -782,6 +802,7 @@ fn cleanup_track_garbage(target_files: &[String], title: &str, target_dir: &Path
         let has_valid_title = !safe_title.is_empty()
             && safe_title != "downloading"
             && safe_title != "fetchingmedia"
+            && safe_title != "mediatrack"
             && !safe_title.starts_with("http");
 
         for entry in entries.flatten() {
@@ -934,6 +955,7 @@ struct QueuedTrack {
     url: String,
     title: String,
     playlist_folder: Option<String>,
+    sequence_index: Option<(usize, usize)>, // (1-based index, total_tracks_in_batch)
 }
 
 fn resolution_tag_name(h: u32) -> &'static str {
@@ -981,7 +1003,6 @@ fn build_standard_preset_heights() -> Vec<DynamicQualityChoice> {
     list
 }
 
-// Inspects the URL(s), detects exact available resolutions & file sizes, and picks 1080p as default!
 async fn inspect_urls_and_detect_qualities(
     urls: Vec<String>,
 ) -> (Vec<QueuedTrack>, Vec<DynamicQualityChoice>, usize, String) {
@@ -993,12 +1014,12 @@ async fn inspect_urls_and_detect_qualities(
         let plat = detect_platform_folder(&url);
         HistoryStore::record_search(&url, plat);
 
-        // 1. Direct Image / Reddit Post -> Offer Image Gallery + Video/Audio fallback
         if is_single && (is_direct_image_or_gallery_url(&url) || is_reddit_url(&url)) {
             tracks.push(QueuedTrack {
                 url: url.clone(),
                 title: format!("{} Post", plat),
                 playlist_folder: None,
+                sequence_index: None,
             });
             let choices = vec![
                 DynamicQualityChoice {
@@ -1021,7 +1042,6 @@ async fn inspect_urls_and_detect_qualities(
             return (tracks, choices, 0, format!("{} Media Post", plat));
         }
 
-        // 2. Single Video URL -> Fetch exact available resolutions & file sizes via yt-dlp -J
         if is_single && !url.contains("list=") && !url.contains("/playlist") {
             let mut auth_chain: Vec<Option<(&str, &str)>> = vec![None];
             if Path::new("cookies.txt").exists() {
@@ -1049,6 +1069,7 @@ async fn inspect_urls_and_detect_qualities(
                                 url: url.clone(),
                                 title: clean_t.clone(),
                                 playlist_folder: None,
+                                sequence_index: None,
                             });
 
                             let mut choices = Vec::new();
@@ -1122,7 +1143,6 @@ async fn inspect_urls_and_detect_qualities(
                                 });
                             }
 
-                            // Default selection: Pick 1080p if available (or highest resolution <= 1080p)
                             let default_idx = choices
                                 .iter()
                                 .position(|c| c.height == 1080)
@@ -1138,6 +1158,7 @@ async fn inspect_urls_and_detect_qualities(
                                 url: url.clone(),
                                 title: format!("{} Gallery", plat),
                                 playlist_folder: None,
+                                sequence_index: None,
                             });
                             let choices = vec![DynamicQualityChoice {
                                 format_id: "gallery".into(),
@@ -1157,7 +1178,7 @@ async fn inspect_urls_and_detect_qualities(
             }
         }
 
-        // 3. Playlist or Multi-Link Batch expansion
+        // Playlist or Multi-Link Batch expansion
         if url.contains("list=") || url.contains("/playlist") {
             let mut cmd = Command::new(get_ytdlp_cmd());
             cmd.arg("-J")
@@ -1180,6 +1201,7 @@ async fn inspect_urls_and_detect_qualities(
                                         url: entry_url,
                                         title: normalize_ytdlp_unicode(&raw_title),
                                         playlist_folder: Some(folder.clone()),
+                                        sequence_index: None,
                                     });
                                 }
                             }
@@ -1194,13 +1216,24 @@ async fn inspect_urls_and_detect_qualities(
             url,
             title: "Media Track".into(),
             playlist_folder: None,
+            sequence_index: None,
         });
+    }
+
+    // Assign dynamic zero-padded sequence indices (1..=total) if there are multiple tracks!
+    let total_tracks = tracks.len();
+    if total_tracks > 1 {
+        let width = total_tracks.to_string().len().max(2);
+        for (i, t) in tracks.iter_mut().enumerate() {
+            t.sequence_index = Some((i + 1, total_tracks));
+            t.title = format!("{:0width$}_{}", i + 1, t.title, width = width);
+        }
     }
 
     let choices = build_standard_preset_heights();
     let default_idx = choices.iter().position(|c| c.height == 1080).unwrap_or(0);
-    let summary_title = if tracks.len() > 1 {
-        format!("Batch / Playlist ({} items)", tracks.len())
+    let summary_title = if total_tracks > 1 {
+        format!("Ordered Batch / Playlist ({} items — Auto-Numbered)", total_tracks)
     } else {
         tracks.first().map(|t| t.title.clone()).unwrap_or_else(|| "Media".into())
     };
@@ -1211,6 +1244,7 @@ async fn inspect_urls_and_detect_qualities(
 // --- SEQUENTIAL WORKER ENGINE ---
 
 enum PopupWorkerEvent {
+    SummonAndFocus,
     UpdateAvailable { tag: String },
     ClipboardUpdated { raw_text: String, valid_joined: String },
     InspectionComplete {
@@ -1240,6 +1274,7 @@ async fn run_single_track_download(
     let is_audio = choice.is_audio;
     let mut is_image = choice.is_image
         || (!is_audio && (is_direct_image_or_gallery_url(&url) || is_reddit_url(&url)));
+    let seq_prefix = format_sequence_prefix(track.sequence_index);
 
     let mut auth_chain: Vec<Option<(&str, &str)>> = vec![None];
     if Path::new("cookies.txt").exists() {
@@ -1257,9 +1292,9 @@ async fn run_single_track_download(
         let _ = std::fs::create_dir_all(&base_dir);
 
         let res = if is_image {
-            execute_image_or_reddit_download(&url, &base_dir, auth, &tx, &mut cancel_rx).await
+            execute_image_or_reddit_download(&url, &base_dir, &seq_prefix, auth, &tx, &mut cancel_rx).await
         } else {
-            execute_ytdlp_download(&url, &base_dir, &choice, auth, &tx, &mut cancel_rx).await
+            execute_ytdlp_download(&url, &base_dir, &choice, &seq_prefix, auth, &tx, &mut cancel_rx).await
         };
 
         match res {
@@ -1287,7 +1322,7 @@ async fn run_single_track_download(
                     is_image = true;
                     let img_dir = build_target_dir(&url, false, true, track.playlist_folder.as_deref());
                     let _ = std::fs::create_dir_all(&img_dir);
-                    if let Ok(final_dir) = execute_image_or_reddit_download(&url, &img_dir, auth, &tx, &mut cancel_rx).await {
+                    if let Ok(final_dir) = execute_image_or_reddit_download(&url, &img_dir, &seq_prefix, auth, &tx, &mut cancel_rx).await {
                         let _ = tx.send(PopupWorkerEvent::TrackFinished {
                             success: true,
                             error: None,
@@ -1317,6 +1352,7 @@ async fn run_single_track_download(
 async fn execute_image_or_reddit_download(
     url: &str,
     base_dir: &Path,
+    seq_prefix: &str,
     auth: Option<(&str, &str)>,
     tx: &mpsc::Sender<PopupWorkerEvent>,
     cancel_rx: &mut oneshot::Receiver<()>,
@@ -1329,6 +1365,7 @@ async fn execute_image_or_reddit_download(
             .arg(url)
             .arg(base_dir)
             .arg(BROWSER_UA)
+            .arg(seq_prefix)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
@@ -1454,6 +1491,9 @@ async fn execute_image_or_reddit_download(
     if let Some((flag, val)) = auth {
         cmd.arg(flag).arg(val);
     }
+    if !seq_prefix.is_empty() {
+        cmd.arg("-o").arg(format!("filename={}{{category}}_{{filename}}.{{extension}}", seq_prefix));
+    }
     cmd.arg("--user-agent").arg(BROWSER_UA).arg("-D").arg(base_dir).arg(url);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
@@ -1521,6 +1561,7 @@ async fn execute_ytdlp_download(
     url: &str,
     base_dir: &Path,
     choice: &DynamicQualityChoice,
+    seq_prefix: &str,
     auth: Option<(&str, &str)>,
     tx: &mpsc::Sender<PopupWorkerEvent>,
     cancel_rx: &mut oneshot::Receiver<()>,
@@ -1539,20 +1580,29 @@ async fn execute_ytdlp_download(
         cmd.arg(flag).arg(val);
     }
 
+    // For playlists/batches, include both the zero-padded sequence prefix AND the video's upload date!
+    let date_token = if !seq_prefix.is_empty() {
+        "_%(upload_date>%Y-%m-%d,release_date>%Y-%m-%d|Unknown-Date)s"
+    } else {
+        ""
+    };
+
     if choice.is_audio {
+        let tmpl = format!("{}{}%(title)s{}.%(ext)s", seq_prefix, "", date_token);
         cmd.arg("-f").arg("bestaudio/best")
            .arg("-x")
            .arg("--audio-format").arg("mp3")
            .arg("--embed-thumbnail")
            .arg("--add-metadata")
-           .arg("-o").arg(base_dir.join("%(title)s.%(ext)s").to_string_lossy().to_string());
+           .arg("-o").arg(base_dir.join(tmpl).to_string_lossy().to_string());
     } else {
+        let tmpl = format!("{}%(title)s{}_%(resolution)s.%(ext)s", seq_prefix, date_token);
         cmd.arg("-f").arg(&choice.format_id)
            .arg("--merge-output-format").arg("mp4")
            .arg("--embed-subs")
            .arg("--sub-langs").arg("orig,en")
            .arg("--embed-thumbnail")
-           .arg("-o").arg(base_dir.join("%(title)s_%(resolution)s.%(ext)s").to_string_lossy().to_string());
+           .arg("-o").arg(base_dir.join(tmpl).to_string_lossy().to_string());
     }
 
     cmd.arg(url).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -1682,7 +1732,11 @@ struct QuickPopupApp {
 }
 
 impl QuickPopupApp {
-    fn new(cc: &eframe::CreationContext<'_>, rt: Arc<tokio::runtime::Runtime>) -> Self {
+    fn new(
+        cc: &eframe::CreationContext<'_>,
+        rt: Arc<tokio::runtime::Runtime>,
+        ipc_listener: TcpListener,
+    ) -> Self {
         let theme = OsTheme::detect();
 
         let mut style = (*cc.egui_ctx.style()).clone();
@@ -1731,7 +1785,20 @@ impl QuickPopupApp {
 
         let (worker_tx, worker_rx) = mpsc::channel(100);
 
-        // 1. Check GitHub Releases in the background for new updates!
+        // 1. Single-Instance IPC Listener: Brings existing popup to front if user presses Super+M again!
+        let summon_tx = worker_tx.clone();
+        let egui_ctx_clone = cc.egui_ctx.clone();
+        std::thread::spawn(move || {
+            for stream in ipc_listener.incoming().flatten() {
+                let mut s = stream;
+                let mut buf = [0u8; 16];
+                let _ = s.read(&mut buf);
+                let _ = summon_tx.blocking_send(PopupWorkerEvent::SummonAndFocus);
+                egui_ctx_clone.request_repaint();
+            }
+        });
+
+        // 2. Check GitHub Releases in the background for new updates!
         let update_tx = worker_tx.clone();
         rt.spawn(async move {
             if let Some(tag) = check_github_for_updates().await {
@@ -1739,7 +1806,7 @@ impl QuickPopupApp {
             }
         });
 
-        // 2. Live Clipboard Auto-Watcher
+        // 3. Live Clipboard Auto-Watcher
         let clip_tx = worker_tx.clone();
         let initial_clip_clone = raw_clip.clone();
         std::thread::spawn(move || {
@@ -1900,9 +1967,10 @@ impl QuickPopupApp {
             let dir = build_target_dir(&track.url, is_audio, is_img, track.playlist_folder.as_deref());
             let files = self.current_target_files.clone();
             let title = self.current_title.clone();
+            let seq_pref = format_sequence_prefix(track.sequence_index);
             std::thread::spawn(move || {
                 std::thread::sleep(Duration::from_millis(80));
-                cleanup_track_garbage(&files, &title, &dir);
+                cleanup_track_garbage(&files, &title, &seq_pref, &dir);
             });
         }
         self.current_idx += 1;
@@ -1919,8 +1987,9 @@ impl QuickPopupApp {
             let is_img = choice.map(|c| c.is_image).unwrap_or(false)
                 || (!is_audio && (is_direct_image_or_gallery_url(&track.url) || is_reddit_url(&track.url)));
             let dir = build_target_dir(&track.url, is_audio, is_img, track.playlist_folder.as_deref());
+            let seq_pref = format_sequence_prefix(track.sequence_index);
             std::thread::sleep(Duration::from_millis(80));
-            cleanup_track_garbage(&self.current_target_files, &self.current_title, &dir);
+            cleanup_track_garbage(&self.current_target_files, &self.current_title, &seq_pref, &dir);
         }
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
@@ -1932,6 +2001,19 @@ impl eframe::App for QuickPopupApp {
 
         while let Ok(ev) = self.worker_rx.try_recv() {
             match ev {
+                PopupWorkerEvent::SummonAndFocus => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                    if self.phase == PopupPhase::Input {
+                        let raw_clip = read_system_clipboard_robust();
+                        let valid = extract_valid_urls_from_text(&raw_clip);
+                        if !valid.is_empty() {
+                            self.input_url = valid.join(" ");
+                            self.last_seen_clipboard = raw_clip;
+                        }
+                        self.auto_focused = false;
+                    }
+                }
                 PopupWorkerEvent::UpdateAvailable { tag } => {
                     self.available_update = Some(tag);
                 }
@@ -1956,7 +2038,6 @@ impl eframe::App for QuickPopupApp {
                         self.selected_choice_idx = default_idx;
                         self.inspected_summary_title = summary_title;
                         self.current_idx = 0;
-                        // Resize window smoothly to fit the full scrollable quality selector list!
                         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(640.0, 275.0)));
                         self.phase = PopupPhase::QualitySelect;
                     }
@@ -2141,7 +2222,6 @@ impl eframe::App for QuickPopupApp {
                             }
                         }
 
-                        // Live 1-Click Self-Updater Pill (Appears automatically when you publish a new GitHub Release!)
                         if let Some(ref new_tag) = self.available_update {
                             ui.add_space(6.0);
                             let upd_btn = egui::Button::new(
@@ -2246,7 +2326,6 @@ impl eframe::App for QuickPopupApp {
                         });
                     }
 
-                    // --- STEP 2: DYNAMIC QUALITY & FORMAT SELECTOR (Defaults to 1080p, shows ALL detected streams) ---
                     PopupPhase::QualitySelect => {
                         let safe_t: String = self.inspected_summary_title.chars().take(62).collect();
                         ui.horizontal(|ui| {
@@ -2266,7 +2345,6 @@ impl eframe::App for QuickPopupApp {
                                     let is_selected = idx == self.selected_choice_idx;
                                     let row_bg = if is_selected { theme.accent_primary } else { theme.card_elevated };
                                     let fg_col = if is_selected { theme.accent_text_on_primary } else { theme.text_primary };
-                                    let badge_col = if is_selected { theme.accent_text_on_primary } else { theme.accent_primary };
 
                                     let btn_text = format!(
                                         "{} {:<44} [{}]",
@@ -2288,7 +2366,6 @@ impl eframe::App for QuickPopupApp {
                                         self.selected_choice_idx = idx;
                                         start_clicked = true;
                                     }
-                                    let _ = badge_col;
                                 }
                             });
 
@@ -2315,7 +2392,7 @@ impl eframe::App for QuickPopupApp {
                                         .color(theme.accent_text_on_primary),
                                 )
                                 .fill(theme.accent_primary)
-                                .min_size(egui::vec2(162.0, 30.0));
+                                .min_size(egui::vec2(135.0, 30.0));
 
                                 if ui.add(start_btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() || start_clicked {
                                     ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(640.0, 162.0)));
@@ -2493,6 +2570,18 @@ impl eframe::App for QuickPopupApp {
 }
 
 fn main() -> eframe::Result<()> {
+    // Single-Instance IPC Check: If media-popup is already open, summon/focus it and exit immediately!
+    let ipc_addr = format!("127.0.0.1:{}", SINGLE_INSTANCE_PORT);
+    let ipc_listener = match TcpListener::bind(&ipc_addr) {
+        Ok(listener) => listener,
+        Err(_) => {
+            if let Ok(mut stream) = TcpStream::connect(&ipc_addr) {
+                let _ = stream.write_all(b"SUMMON");
+            }
+            return Ok(());
+        }
+    };
+
     if std::env::consts::OS == "linux" {
         std::env::set_var("WINIT_UNIX_BACKEND", "x11");
     }
@@ -2523,6 +2612,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Media Downloader",
         options,
-        Box::new(move |cc| Ok(Box::new(QuickPopupApp::new(cc, rt_clone)))),
+        Box::new(move |cc| Ok(Box::new(QuickPopupApp::new(cc, rt_clone, ipc_listener)))),
     )
 }
