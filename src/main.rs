@@ -270,7 +270,10 @@ fn version_is_newer(latest_tag: &str, current_ver: &str) -> bool {
 }
 
 async fn check_github_for_updates() -> Option<String> {
-    let api_url = format!("https://api.github.com/repos/{}/releases/latest", GITHUB_REPO);
+    let api_url = format!(
+        "https://api.github.com/repos/{}/releases/latest",
+        GITHUB_REPO
+    );
     let out = tokio::time::timeout(
         Duration::from_secs(8),
         Command::new("curl")
@@ -404,7 +407,8 @@ impl HistoryStore {
             "Video"
         };
         let save_path = get_base_download_dir(item).to_string_lossy().to_string();
-        self.download_history.retain(|e| !(e.url == item.url && e.media_type == media_type));
+        self.download_history
+            .retain(|e| !(e.url == item.url && e.media_type == media_type));
         self.download_history.insert(
             0,
             DownloadHistoryEntry {
@@ -467,7 +471,11 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
 }
 
 fn get_ytdlp_cmd() -> String {
-    let base = if std::env::consts::OS == "windows" { "yt-dlp.exe" } else { "yt-dlp" };
+    let base = if std::env::consts::OS == "windows" {
+        "yt-dlp.exe"
+    } else {
+        "yt-dlp"
+    };
     if Path::new(base).exists() {
         format!("./{}", base)
     } else {
@@ -476,7 +484,11 @@ fn get_ytdlp_cmd() -> String {
 }
 
 fn get_gallerydl_cmd() -> String {
-    let base = if std::env::consts::OS == "windows" { "gallery-dl.exe" } else { "gallery-dl" };
+    let base = if std::env::consts::OS == "windows" {
+        "gallery-dl.exe"
+    } else {
+        "gallery-dl"
+    };
     if Path::new(base).exists() {
         format!("./{}", base)
     } else {
@@ -485,7 +497,11 @@ fn get_gallerydl_cmd() -> String {
 }
 
 fn get_local_ffmpeg_dir() -> Option<String> {
-    let bin = if std::env::consts::OS == "windows" { "ffmpeg.exe" } else { "ffmpeg" };
+    let bin = if std::env::consts::OS == "windows" {
+        "ffmpeg.exe"
+    } else {
+        "ffmpeg"
+    };
     if Path::new(bin).exists() {
         Some(".".to_string())
     } else {
@@ -518,7 +534,7 @@ fn detect_platform_folder(url: &str, extractor: &str) -> &'static str {
 fn get_base_download_dir(item: &QueueItem) -> PathBuf {
     let mut path = dirs::download_dir().unwrap_or_else(|| PathBuf::from("."));
     path.push("MediaDownloader");
-    
+
     if item.is_audio {
         path.push("Audio");
     } else if item.is_image {
@@ -529,9 +545,10 @@ fn get_base_download_dir(item: &QueueItem) -> PathBuf {
 
     let platform_folder = detect_platform_folder(&item.url, &item.platform);
     path.push(platform_folder);
-    
+
     if let Some(folder) = &item.target_folder {
-        let safe_folder = folder.replace(|c: char| !c.is_alphanumeric() && c != ' ' && c != '-', "_");
+        let safe_folder =
+            folder.replace(|c: char| !c.is_alphanumeric() && c != ' ' && c != '-', "_");
         path.push(safe_folder);
     }
     path
@@ -558,7 +575,9 @@ fn open_folder_in_os(path: &Path) {
     let path_str = final_dir.to_string_lossy().to_string();
     match std::env::consts::OS {
         "windows" => {
-            let _ = std::process::Command::new("explorer").arg(&path_str).spawn();
+            let _ = std::process::Command::new("explorer")
+                .arg(&path_str)
+                .spawn();
         }
         "macos" => {
             let _ = std::process::Command::new("open").arg(&path_str).spawn();
@@ -595,7 +614,11 @@ fn is_direct_image_or_gallery_url(url: &str) -> bool {
 
 fn clean_tracking_params(url: &str) -> String {
     let lower = url.to_lowercase();
-    if lower.contains("reddit.com/") || lower.contains("instagram.com/") || lower.contains("pinterest.com/") || lower.contains("x.com/") {
+    if lower.contains("reddit.com/")
+        || lower.contains("instagram.com/")
+        || lower.contains("pinterest.com/")
+        || lower.contains("x.com/")
+    {
         if let Some(idx) = url.find('?') {
             return url[..idx].to_string();
         }
@@ -607,7 +630,10 @@ fn extract_valid_urls_from_text(text: &str) -> Vec<String> {
     let mut valid_urls = Vec::new();
     for raw in text.split_whitespace() {
         let trimmed = raw.trim_matches(|c: char| {
-            matches!(c, '"' | '\'' | '(' | ')' | '[' | ']' | '<' | '>' | ',' | ';')
+            matches!(
+                c,
+                '"' | '\'' | '(' | ')' | '[' | ']' | '<' | '>' | ',' | ';'
+            )
         });
         if let Some(idx) = trimmed.find("http://").or_else(|| trimmed.find("https://")) {
             let mut url = trimmed[idx..].to_string();
@@ -630,7 +656,11 @@ fn extract_valid_urls_from_text(text: &str) -> Vec<String> {
 async fn resolve_short_url(url: &str) -> String {
     let lower = url.to_lowercase();
     if (lower.contains("reddit.com/") && lower.contains("/s/")) || lower.contains("pin.it/") {
-        let null_dev = if std::env::consts::OS == "windows" { "NUL" } else { "/dev/null" };
+        let null_dev = if std::env::consts::OS == "windows" {
+            "NUL"
+        } else {
+            "/dev/null"
+        };
         if let Ok(Ok(output)) = tokio::time::timeout(
             Duration::from_secs(10),
             Command::new("curl")
@@ -694,7 +724,9 @@ impl AuthMode {
 
     pub fn label(&self) -> &'static str {
         match self {
-            AuthMode::SmartAuto => "🛡️ Smart Auto (Guest First -> Auto-Try Browsers on Login/Age Wall)",
+            AuthMode::SmartAuto => {
+                "🛡️ Smart Auto (Guest First -> Auto-Try Browsers on Login/Age Wall)"
+            }
             AuthMode::Chrome => "🌐 Always Use Google Chrome Cookies",
             AuthMode::Firefox => "🦊 Always Use Firefox Cookies",
             AuthMode::Brave => "🦁 Always Use Brave Cookies",
@@ -869,17 +901,52 @@ pub struct QueueItem {
 }
 
 enum WorkerMessage {
-    UpdateAvailable { tag: String },
-    UrlResolved { id: usize, resolved_url: String },
-    MetaFetched { id: usize, info: YtDlpInfo, resolved_auth: Option<AuthMode> },
-    ImageDetected { id: usize, platform: String, resolved_auth: Option<AuthMode> },
-    SwitchToImageEngine { id: usize },
-    SwitchToVideoEngine { id: usize },
-    MetaFailed { id: usize, error: String },
-    Filename { id: usize, file_name: String },
-    Progress { id: usize, percent: f32, dl_bytes: f64, total_bytes: f64 },
-    Finished { id: usize, success: bool, error: Option<String>, was_killed: bool },
-    ClipboardCaptured { url: String },
+    UpdateAvailable {
+        tag: String,
+    },
+    UrlResolved {
+        id: usize,
+        resolved_url: String,
+    },
+    MetaFetched {
+        id: usize,
+        info: YtDlpInfo,
+        resolved_auth: Option<AuthMode>,
+    },
+    ImageDetected {
+        id: usize,
+        platform: String,
+        resolved_auth: Option<AuthMode>,
+    },
+    SwitchToImageEngine {
+        id: usize,
+    },
+    SwitchToVideoEngine {
+        id: usize,
+    },
+    MetaFailed {
+        id: usize,
+        error: String,
+    },
+    Filename {
+        id: usize,
+        file_name: String,
+    },
+    Progress {
+        id: usize,
+        percent: f32,
+        dl_bytes: f64,
+        total_bytes: f64,
+    },
+    Finished {
+        id: usize,
+        success: bool,
+        error: Option<String>,
+        was_killed: bool,
+    },
+    ClipboardCaptured {
+        url: String,
+    },
 }
 
 // --- APP STATE ---
@@ -908,7 +975,10 @@ struct App {
 }
 
 impl App {
-    fn new(worker_tx: mpsc::Sender<WorkerMessage>, worker_rx: mpsc::Receiver<WorkerMessage>) -> Self {
+    fn new(
+        worker_tx: mpsc::Sender<WorkerMessage>,
+        worker_rx: mpsc::Receiver<WorkerMessage>,
+    ) -> Self {
         let mut queue_state = ListState::default();
         queue_state.select(Some(0));
         let mut format_state = ListState::default();
@@ -937,7 +1007,7 @@ impl App {
             worker_tx,
             worker_rx,
             active_downloads: HashSet::new(),
-            max_concurrent_downloads: 4, 
+            max_concurrent_downloads: 4,
             next_id: 1,
         }
     }
@@ -969,26 +1039,66 @@ impl App {
 
         let item = if valid_urls.len() == 1 {
             let url = valid_urls.pop().unwrap();
-            if self.queue.iter().any(|item| item.url == url && item.status == ItemStatus::New) {
+            if self
+                .queue
+                .iter()
+                .any(|item| item.url == url && item.status == ItemStatus::New)
+            {
                 return true;
             }
             let detected_platform = detect_platform_folder(&url, "").to_string();
 
             QueueItem {
-                id: item_id, url, title: "Press [Enter] to inspect".into(), platform: detected_platform,
-                description: String::new(), status: ItemStatus::New, available_formats: Vec::new(),
-                chosen_format_id: None, is_audio: false, is_image: false, target_files: Vec::new(),
-                stats: DownloadStats::default(), started_at: None, playlist_entries: None,
-                target_folder: None, sequence_index: None, retries: 0, resolved_auth: initial_auth,
+                id: item_id,
+                url,
+                title: "Press [Enter] to inspect".into(),
+                platform: detected_platform,
+                description: String::new(),
+                status: ItemStatus::New,
+                available_formats: Vec::new(),
+                chosen_format_id: None,
+                is_audio: false,
+                is_image: false,
+                target_files: Vec::new(),
+                stats: DownloadStats::default(),
+                started_at: None,
+                playlist_entries: None,
+                target_folder: None,
+                sequence_index: None,
+                retries: 0,
+                resolved_auth: initial_auth,
             }
         } else {
-            let entries: Vec<FlatEntry> = valid_urls.into_iter().map(|u| FlatEntry { id: None, url: Some(u.clone()), title: Some(u) }).collect();
+            let entries: Vec<FlatEntry> = valid_urls
+                .into_iter()
+                .map(|u| FlatEntry {
+                    id: None,
+                    url: Some(u.clone()),
+                    title: Some(u),
+                })
+                .collect();
             QueueItem {
-                id: item_id, url: "batch".into(), title: "Batch Download Group".into(), platform: "Multi-Link".into(),
-                description: format!("Contains {} pasted links (will be auto-numbered).", entries.len()), status: ItemStatus::New, 
-                available_formats: Vec::new(), chosen_format_id: None, is_audio: false, is_image: false,
-                target_files: Vec::new(), stats: DownloadStats::default(), started_at: None,
-                playlist_entries: Some(entries), target_folder: None, sequence_index: None, retries: 0, resolved_auth: initial_auth,
+                id: item_id,
+                url: "batch".into(),
+                title: "Batch Download Group".into(),
+                platform: "Multi-Link".into(),
+                description: format!(
+                    "Contains {} pasted links (will be auto-numbered).",
+                    entries.len()
+                ),
+                status: ItemStatus::New,
+                available_formats: Vec::new(),
+                chosen_format_id: None,
+                is_audio: false,
+                is_image: false,
+                target_files: Vec::new(),
+                stats: DownloadStats::default(),
+                started_at: None,
+                playlist_entries: Some(entries),
+                target_folder: None,
+                sequence_index: None,
+                retries: 0,
+                resolved_auth: initial_auth,
             }
         };
 
@@ -1007,7 +1117,9 @@ impl App {
     async fn nuke_queue_and_cancel(&mut self) {
         {
             let mut cancel_guard = self.active_worker_cancel.lock().await;
-            for (_, cancel) in cancel_guard.drain() { let _ = cancel.send(()); }
+            for (_, cancel) in cancel_guard.drain() {
+                let _ = cancel.send(());
+            }
         }
         tokio::time::sleep(Duration::from_millis(80)).await;
         for item in &self.queue {
@@ -1045,7 +1157,9 @@ impl App {
             });
         }
 
-        let Some(idx) = target_idx else { return; };
+        let Some(idx) = target_idx else {
+            return;
+        };
         let id = self.queue[idx].id;
 
         if self.active_downloads.contains(&id) {
@@ -1074,14 +1188,28 @@ impl App {
                 }
             }
         }
-        if target_idx.is_none() { target_idx = self.queue.iter().position(|i| i.status == ItemStatus::Downloading); }
-        if target_idx.is_none() { target_idx = self.queue.iter().position(|i| i.status == ItemStatus::Paused); }
+        if target_idx.is_none() {
+            target_idx = self
+                .queue
+                .iter()
+                .position(|i| i.status == ItemStatus::Downloading);
+        }
+        if target_idx.is_none() {
+            target_idx = self
+                .queue
+                .iter()
+                .position(|i| i.status == ItemStatus::Paused);
+        }
 
-        let Some(idx) = target_idx else { return; };
+        let Some(idx) = target_idx else {
+            return;
+        };
         let item_id = self.queue[idx].id;
 
         if self.queue[idx].status == ItemStatus::Downloading {
-            if let Some(cancel) = self.active_worker_cancel.lock().await.remove(&item_id) { let _ = cancel.send(()); }
+            if let Some(cancel) = self.active_worker_cancel.lock().await.remove(&item_id) {
+                let _ = cancel.send(());
+            }
             self.active_downloads.remove(&item_id);
             self.queue[idx].status = ItemStatus::Paused;
             self.queue[idx].stats.smoothed_speed = 0.0;
@@ -1099,18 +1227,37 @@ impl App {
         self.active_downloads.insert(item.id);
         let tx = self.worker_tx.clone();
         let item_id = item.id;
-        
+
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
-        self.active_worker_cancel.lock().await.insert(item.id, cancel_tx);
+        self.active_worker_cancel
+            .lock()
+            .await
+            .insert(item.id, cancel_tx);
 
         tokio::spawn(async move {
             let res = execute_download(item, tx.clone(), cancel_rx).await;
             match res {
-                Ok(_) => { let _ = tx.send(WorkerMessage::Finished { id: item_id, success: true, error: None, was_killed: false }).await; }
-                Err(e) => { 
+                Ok(_) => {
+                    let _ = tx
+                        .send(WorkerMessage::Finished {
+                            id: item_id,
+                            success: true,
+                            error: None,
+                            was_killed: false,
+                        })
+                        .await;
+                }
+                Err(e) => {
                     let err_str = e.to_string();
                     let was_killed = err_str.contains("Canceled by user");
-                    let _ = tx.send(WorkerMessage::Finished { id: item_id, success: false, error: Some(err_str), was_killed }).await; 
+                    let _ = tx
+                        .send(WorkerMessage::Finished {
+                            id: item_id,
+                            success: false,
+                            error: Some(err_str),
+                            was_killed,
+                        })
+                        .await;
                 }
             }
         });
@@ -1214,7 +1361,10 @@ fn cleanup_item_garbage(item: &QueueItem) {
             if let Some(parent) = p.parent() {
                 for base_candidate in [stem_str.as_ref(), clean_base] {
                     let base_path = parent.join(base_candidate);
-                    for ext in ["mp4", "webm", "mkv", "m4a", "mp3", "webp", "jpg", "png", "part", "ytdl", "srt", "lrc", "vtt"] {
+                    for ext in [
+                        "mp4", "webm", "mkv", "m4a", "mp3", "webp", "jpg", "png", "part", "ytdl",
+                        "srt", "lrc", "vtt",
+                    ] {
                         let _ = std::fs::remove_file(base_path.with_extension(ext));
                     }
                 }
@@ -1224,7 +1374,10 @@ fn cleanup_item_garbage(item: &QueueItem) {
 
     let target_dir = get_base_download_dir(item);
     if let Ok(entries) = std::fs::read_dir(target_dir) {
-        let safe_title = item.title.replace(|c: char| !c.is_alphanumeric(), "").to_lowercase();
+        let safe_title = item
+            .title
+            .replace(|c: char| !c.is_alphanumeric(), "")
+            .to_lowercase();
         let has_valid_title = !safe_title.is_empty()
             && safe_title != "playlisttrack"
             && safe_title != "imagegallery"
@@ -1235,9 +1388,13 @@ fn cleanup_item_garbage(item: &QueueItem) {
             let p = entry.path();
             if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
                 let lower_name = name.to_lowercase();
-                let safe_name = name.replace(|c: char| !c.is_alphanumeric(), "").to_lowercase();
+                let safe_name = name
+                    .replace(|c: char| !c.is_alphanumeric(), "")
+                    .to_lowercase();
 
-                let matches_prefix = base_prefixes.iter().any(|pref| !pref.is_empty() && lower_name.starts_with(pref));
+                let matches_prefix = base_prefixes
+                    .iter()
+                    .any(|pref| !pref.is_empty() && lower_name.starts_with(pref));
                 let matches_title = has_valid_title && safe_name.contains(&safe_title);
 
                 if matches_prefix || matches_title {
@@ -1253,8 +1410,11 @@ fn parse_size(s: &str) -> f64 {
     let mut num_str = String::new();
     let mut unit_str = String::new();
     for c in s.chars() {
-        if c.is_numeric() || c == '.' { num_str.push(c); }
-        else { unit_str.push(c); }
+        if c.is_numeric() || c == '.' {
+            num_str.push(c);
+        } else {
+            unit_str.push(c);
+        }
     }
     let val = num_str.parse::<f64>().unwrap_or(0.0);
     match unit_str.to_uppercase().as_str() {
@@ -1268,13 +1428,16 @@ fn parse_size(s: &str) -> f64 {
 async fn run_metadata_cmd(url: &str, specific_auth: Option<&AuthMode>) -> Result<YtDlpInfo> {
     let mut cmd = Command::new(get_ytdlp_cmd());
     cmd.arg("-J").arg("--user-agent").arg(BROWSER_UA);
-    
+
     if let Some(mode) = specific_auth {
         apply_specific_auth(&mut cmd, mode);
     }
 
-    if url.contains("list=") || url.contains("/playlist") { cmd.arg("--flat-playlist"); } 
-    else { cmd.arg("--no-playlist"); }
+    if url.contains("list=") || url.contains("/playlist") {
+        cmd.arg("--flat-playlist");
+    } else {
+        cmd.arg("--no-playlist");
+    }
 
     cmd.arg(url).stdout(Stdio::piped()).stderr(Stdio::piped());
     let output_res = tokio::time::timeout(Duration::from_secs(35), cmd.output()).await;
@@ -1285,7 +1448,9 @@ async fn run_metadata_cmd(url: &str, specific_auth: Option<&AuthMode>) -> Result
     };
 
     if !output.status.success() {
-        return Err(anyhow::anyhow!(String::from_utf8_lossy(&output.stderr).trim().to_string()));
+        return Err(anyhow::anyhow!(String::from_utf8_lossy(&output.stderr)
+            .trim()
+            .to_string()));
     }
 
     let info: YtDlpInfo = serde_json::from_slice(&output.stdout)?;
@@ -1319,7 +1484,10 @@ async fn fetch_metadata(url: &str, auth_mode: AuthMode) -> Result<(YtDlpInfo, Op
                             Err(e) => {
                                 let e_str = e.to_string();
                                 if is_no_video_error(&e_str) {
-                                    return Err(anyhow::anyhow!("No video formats found (Auth:{:?})", candidate));
+                                    return Err(anyhow::anyhow!(
+                                        "No video formats found (Auth:{:?})",
+                                        candidate
+                                    ));
                                 }
                                 if candidate == AuthMode::Chrome {
                                     last_err = e;
@@ -1348,7 +1516,11 @@ async fn run_reddit_headless_dom_download(
     let _ = std::fs::create_dir_all(&img_dir);
     let seq_prefix = format_sequence_prefix(item.sequence_index);
 
-    let py_bin = if std::env::consts::OS == "windows" { "python" } else { "python3" };
+    let py_bin = if std::env::consts::OS == "windows" {
+        "python"
+    } else {
+        "python3"
+    };
     let mut cmd = Command::new(py_bin);
     cmd.arg("-c")
         .arg(REDDIT_HEADLESS_DOM_PY)
@@ -1425,20 +1597,27 @@ async fn run_reddit_headless_dom_download(
 
     if let Some((video_title, hls_url)) = direct_video_stream {
         item.is_image = false;
-        let _ = tx.send(WorkerMessage::SwitchToVideoEngine { id: item_id }).await;
+        let _ = tx
+            .send(WorkerMessage::SwitchToVideoEngine { id: item_id })
+            .await;
         let vid_dir = get_base_download_dir(item);
         let _ = std::fs::create_dir_all(&vid_dir);
-        let out_tmpl = vid_dir.join(format!("{}.%(ext)s", video_title)).to_string_lossy().to_string();
+        let out_tmpl = vid_dir
+            .join(format!("{}.%(ext)s", video_title))
+            .to_string_lossy()
+            .to_string();
 
         let mut yt = Command::new(get_ytdlp_cmd());
         if let Some(ffmpeg_dir) = get_local_ffmpeg_dir() {
             yt.arg("--ffmpeg-location").arg(ffmpeg_dir);
         }
         yt.arg("--newline")
-          .arg("--no-colors")
-          .arg("--merge-output-format").arg("mp4")
-          .arg("-o").arg(&out_tmpl)
-          .arg(&hls_url);
+            .arg("--no-colors")
+            .arg("--merge-output-format")
+            .arg("mp4")
+            .arg("-o")
+            .arg(&out_tmpl)
+            .arg(&hls_url);
         yt.stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut yt_child = yt.spawn()?;
         let yt_stdout = yt_child.stdout.take().expect("Stdout missing");
@@ -1520,11 +1699,16 @@ async fn run_gallery_dl_download(
         apply_specific_auth(&mut cmd, mode);
     }
     if !seq_prefix.is_empty() {
-        cmd.arg("-o").arg(format!("filename={}{{category}}_{{filename}}.{{extension}}", seq_prefix));
+        cmd.arg("-o").arg(format!(
+            "filename={}{{category}}_{{filename}}.{{extension}}",
+            seq_prefix
+        ));
     }
-    cmd.arg("--user-agent").arg(BROWSER_UA)
-       .arg("-D").arg(base_dir)
-       .arg(&item.url);
+    cmd.arg("--user-agent")
+        .arg(BROWSER_UA)
+        .arg("-D")
+        .arg(base_dir)
+        .arg(&item.url);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     let mut child = match cmd.spawn() {
@@ -1550,7 +1734,10 @@ async fn run_gallery_dl_download(
     tokio::spawn(async move {
         while let Ok(Some(line)) = stderr_reader.next_line().await {
             let mut e = err_clone.lock().await;
-            if e.is_empty() || line.to_lowercase().contains("error") || line.to_lowercase().contains("redirect") {
+            if e.is_empty()
+                || line.to_lowercase().contains("error")
+                || line.to_lowercase().contains("redirect")
+            {
                 *e = line.clone();
             }
         }
@@ -1618,12 +1805,19 @@ async fn execute_download(
     let resolved_url = resolve_short_url(&item.url).await;
     if resolved_url != item.url {
         item.url = resolved_url.clone();
-        let _ = tx.send(WorkerMessage::UrlResolved { id: item_id, resolved_url }).await;
+        let _ = tx
+            .send(WorkerMessage::UrlResolved {
+                id: item_id,
+                resolved_url,
+            })
+            .await;
     }
 
     if !item.is_image && (is_direct_image_or_gallery_url(&item.url) || is_reddit_url(&item.url)) {
         item.is_image = true;
-        let _ = tx.send(WorkerMessage::SwitchToImageEngine { id: item_id }).await;
+        let _ = tx
+            .send(WorkerMessage::SwitchToImageEngine { id: item_id })
+            .await;
     }
 
     let base_dir = get_base_download_dir(&item);
@@ -1635,11 +1829,12 @@ async fn execute_download(
 
     let mut cmd = Command::new(get_ytdlp_cmd());
     cmd.arg("--newline")
-       .arg("--continue")
-       .arg("--no-colors")
-       .arg("--ignore-errors")
-       .arg("--user-agent").arg(BROWSER_UA);
-    
+        .arg("--continue")
+        .arg("--no-colors")
+        .arg("--ignore-errors")
+        .arg("--user-agent")
+        .arg(BROWSER_UA);
+
     if let Some(ffmpeg_dir) = get_local_ffmpeg_dir() {
         cmd.arg("--ffmpeg-location").arg(ffmpeg_dir);
     }
@@ -1647,8 +1842,11 @@ async fn execute_download(
     if let Some(ref mode) = item.resolved_auth {
         apply_specific_auth(&mut cmd, mode);
     }
-    
-    cmd.arg("--sleep-requests").arg("1").arg("--min-sleep-interval").arg("1");
+
+    cmd.arg("--sleep-requests")
+        .arg("1")
+        .arg("--min-sleep-interval")
+        .arg("1");
 
     // Smart Zero-Padded Sequence Prefix + Upload Date for Playlists & Batches!
     let seq_prefix = format_sequence_prefix(item.sequence_index);
@@ -1662,27 +1860,42 @@ async fn execute_download(
         if item.is_audio {
             let tmpl = format!("{}%(title)s{}.%(ext)s", seq_prefix, date_token);
             cmd.arg("-x")
-               .arg("--audio-format").arg("mp3")
-               .arg("--embed-thumbnail")
-               .arg("--add-metadata")
-               .arg("-o").arg(base_dir.join(tmpl).to_string_lossy().to_string());
+                .arg("--audio-format")
+                .arg("mp3")
+                .arg("--embed-thumbnail")
+                .arg("--add-metadata")
+                .arg("-o")
+                .arg(base_dir.join(tmpl).to_string_lossy().to_string());
         } else {
             if fid.contains('+') {
-                cmd.arg("-f").arg(fid).arg("--merge-output-format").arg("mp4");
+                cmd.arg("-f")
+                    .arg(fid)
+                    .arg("--merge-output-format")
+                    .arg("mp4");
             } else {
                 cmd.arg("-f").arg(fid);
             }
-            let tmpl = format!("{}%(title)s{}_%(resolution)s.%(ext)s", seq_prefix, date_token);
+            let tmpl = format!(
+                "{}%(title)s{}_%(resolution)s.%(ext)s",
+                seq_prefix, date_token
+            );
             cmd.arg("--embed-subs")
-               .arg("--sub-langs").arg("orig,en")
-               .arg("--embed-thumbnail")
-               .arg("-o").arg(base_dir.join(tmpl).to_string_lossy().to_string());
+                .arg("--sub-langs")
+                .arg("orig,en")
+                .arg("--embed-thumbnail")
+                .arg("-o")
+                .arg(base_dir.join(tmpl).to_string_lossy().to_string());
         }
     } else {
         let tmpl = format!("{}%(title)s{}.%(ext)s", seq_prefix, date_token);
-        cmd.arg("-f").arg("best").arg("-o").arg(base_dir.join(tmpl).to_string_lossy().to_string());
+        cmd.arg("-f")
+            .arg("best")
+            .arg("-o")
+            .arg(base_dir.join(tmpl).to_string_lossy().to_string());
     }
-    cmd.arg(&item.url).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.arg(&item.url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     let mut child = cmd.spawn()?;
     let stdout = child.stdout.take().expect("Stdout missing");
@@ -1697,8 +1910,11 @@ async fn execute_download(
     tokio::spawn(async move {
         while let Ok(Some(line)) = stderr_reader.next_line().await {
             let mut e = err_clone.lock().await;
-            if line.contains("ERROR:") { *e = line.clone(); } 
-            else if e.is_empty() && line.contains("WARNING:") { *e = line.clone(); }
+            if line.contains("ERROR:") {
+                *e = line.clone();
+            } else if e.is_empty() && line.contains("WARNING:") {
+                *e = line.clone();
+            }
         }
     });
 
@@ -1770,7 +1986,9 @@ async fn execute_download(
     if !status.success() || (!downloaded_any && !e.is_empty()) {
         if is_no_video_error(&e) {
             item.is_image = true;
-            let _ = tx.send(WorkerMessage::SwitchToImageEngine { id: item_id }).await;
+            let _ = tx
+                .send(WorkerMessage::SwitchToImageEngine { id: item_id })
+                .await;
             let img_dir = get_base_download_dir(&item);
             return run_gallery_dl_download(&mut item, &img_dir, &tx, &mut cancel_rx).await;
         }
@@ -1789,32 +2007,50 @@ fn get_quick_presets() -> Vec<FormatChoice> {
         FormatChoice {
             id: "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best".into(),
             label: "🎬 Best Video (Max 1080p Full HD + Embedded CC)".into(),
-            ext: "mp4".into(), est_size: "Auto".into(), is_audio: false, is_image: false,
+            ext: "mp4".into(),
+            est_size: "Auto".into(),
+            is_audio: false,
+            is_image: false,
         },
         FormatChoice {
             id: "bestvideo+bestaudio/best".into(),
             label: "💎 Ultra 4K / 8K Video (Unrestricted Max + CC)".into(),
-            ext: "mp4".into(), est_size: "Auto".into(), is_audio: false, is_image: false,
+            ext: "mp4".into(),
+            est_size: "Auto".into(),
+            is_audio: false,
+            is_image: false,
         },
         FormatChoice {
             id: "bestvideo[height<=720]+bestaudio/best[height<=720]/best".into(),
             label: "📺 Medium Quality Video (Max 720p + Embedded CC)".into(),
-            ext: "mp4".into(), est_size: "Auto".into(), is_audio: false, is_image: false,
+            ext: "mp4".into(),
+            est_size: "Auto".into(),
+            is_audio: false,
+            is_image: false,
         },
         FormatChoice {
             id: "bestvideo[height<=480]+bestaudio/best[height<=480]/best".into(),
             label: "📱 Data Saver Video (Max 480p + Embedded CC)".into(),
-            ext: "mp4".into(), est_size: "Auto".into(), is_audio: false, is_image: false,
+            ext: "mp4".into(),
+            est_size: "Auto".into(),
+            is_audio: false,
+            is_image: false,
         },
         FormatChoice {
             id: "bestaudio/best".into(),
             label: "🎵 MP3 320kbps Audio (Single File + Cover Art)".into(),
-            ext: "mp3".into(), est_size: "Auto".into(), is_audio: true, is_image: false,
+            ext: "mp3".into(),
+            est_size: "Auto".into(),
+            is_audio: true,
+            is_image: false,
         },
         FormatChoice {
             id: "gallery".into(),
             label: "🖼️ Download Images / Gallery (via gallery-dl)".into(),
-            ext: "img".into(), est_size: "Orig".into(), is_audio: false, is_image: true,
+            ext: "img".into(),
+            est_size: "Orig".into(),
+            is_audio: false,
+            is_image: true,
         },
     ]
 }
@@ -1822,37 +2058,55 @@ fn get_quick_presets() -> Vec<FormatChoice> {
 fn parse_available_formats(info: &YtDlpInfo) -> Vec<FormatChoice> {
     let mut results = get_quick_presets();
     let mut best_audio_size = 0.0;
-    
+
     if let Some(formats) = &info.formats {
         for f in formats {
-            if f.vcodec.as_deref().unwrap_or("none") == "none" || f.vcodec.as_deref().unwrap_or("none") == "null" {
+            if f.vcodec.as_deref().unwrap_or("none") == "none"
+                || f.vcodec.as_deref().unwrap_or("none") == "null"
+            {
                 let size = f.filesize.or(f.filesize_approx).unwrap_or(0) as f64;
-                if size > best_audio_size { best_audio_size = size; }
+                if size > best_audio_size {
+                    best_audio_size = size;
+                }
             }
         }
-        
-        let mut available_heights: Vec<u32> = formats.iter()
-            .filter(|f| f.vcodec.as_deref().unwrap_or("none") != "none" && f.vcodec.as_deref().unwrap_or("none") != "null")
-            .filter_map(|f| f.height).collect();
-            
+
+        let mut available_heights: Vec<u32> = formats
+            .iter()
+            .filter(|f| {
+                f.vcodec.as_deref().unwrap_or("none") != "none"
+                    && f.vcodec.as_deref().unwrap_or("none") != "null"
+            })
+            .filter_map(|f| f.height)
+            .collect();
+
         available_heights.sort_by(|a, b| b.cmp(a));
         available_heights.dedup();
-        
+
         for h in available_heights {
             let mut best_vid_size = 0.0;
             for f in formats {
                 if f.height == Some(h) {
                     let size = f.filesize.or(f.filesize_approx).unwrap_or(0) as f64;
-                    if size > best_vid_size { best_vid_size = size; }
+                    if size > best_vid_size {
+                        best_vid_size = size;
+                    }
                 }
             }
             let total_size = (best_vid_size + best_audio_size) / 1_048_576.0;
-            let size_str = if total_size > 0.1 { format!("~{:.1} MB", total_size) } else { "Dynamic".into() };
-            
+            let size_str = if total_size > 0.1 {
+                format!("~{:.1} MB", total_size)
+            } else {
+                "Dynamic".into()
+            };
+
             results.push(FormatChoice {
                 id: format!("bestvideo[height<={h}]+bestaudio/best[height<={h}]/best"),
                 label: format!("   ↳ Exact {}p Stream", h),
-                ext: "mp4".into(), est_size: size_str, is_audio: false, is_image: false,
+                ext: "mp4".into(),
+                est_size: size_str,
+                is_audio: false,
+                is_image: false,
             });
         }
     }
@@ -1860,16 +2114,27 @@ fn parse_available_formats(info: &YtDlpInfo) -> Vec<FormatChoice> {
 }
 
 fn format_bytes(bytes: f64) -> String {
-    if bytes >= 1_048_576.0 { format!("{:.1} MB", bytes / 1_048_576.0) }
-    else if bytes >= 1024.0 { format!("{:.1} KB", bytes / 1024.0) }
-    else { format!("{:.0} B", bytes) }
+    if bytes >= 1_048_576.0 {
+        format!("{:.1} MB", bytes / 1_048_576.0)
+    } else if bytes >= 1024.0 {
+        format!("{:.1} KB", bytes / 1024.0)
+    } else {
+        format!("{:.0} B", bytes)
+    }
 }
 
 fn format_time(secs: f64) -> String {
-    if secs <= 0.0 || secs.is_nan() || secs.is_infinite() { return "--:--".into(); }
-    let s = secs as u64; let m = s / 60; let h = m / 60;
-    if h > 0 { format!("{:02}:{:02}:{:02}", h, m % 60, s % 60) }
-    else { format!("{:02}:{:02}", m, s % 60) }
+    if secs <= 0.0 || secs.is_nan() || secs.is_infinite() {
+        return "--:--".into();
+    }
+    let s = secs as u64;
+    let m = s / 60;
+    let h = m / 60;
+    if h > 0 {
+        format!("{:02}:{:02}:{:02}", h, m % 60, s % 60)
+    } else {
+        format!("{:02}:{:02}", m, s % 60)
+    }
 }
 
 // --- MAIN RUNNER ---
@@ -1884,7 +2149,11 @@ async fn main() -> Result<()> {
     }));
 
     let yt_cmd = get_ytdlp_cmd();
-    if std::process::Command::new(&yt_cmd).arg("--version").output().is_err() {
+    if std::process::Command::new(&yt_cmd)
+        .arg("--version")
+        .output()
+        .is_err()
+    {
         println!("CRITICAL ERROR: '{}' was not found on this system!", yt_cmd);
         println!("Please place yt-dlp inside the same folder as this application, or install it system-wide.");
         println!("Press Enter to exit...");
@@ -1921,15 +2190,24 @@ async fn main() -> Result<()> {
                         let trimmed = text.trim();
                         if (trimmed.starts_with("http://") || trimmed.starts_with("https://"))
                             && !trimmed.contains('\n')
-                            && (trimmed.contains("youtube.com") || trimmed.contains("youtu.be") || 
-                                trimmed.contains("instagram.com") || trimmed.contains("reddit.com") || 
-                                trimmed.contains("redd.it") || trimmed.contains("imgur.com") ||
-                                trimmed.contains("pinterest.com") || trimmed.contains("pin.it") ||
-                                trimmed.contains("x.com") || trimmed.contains("twitter.com") ||
-                                trimmed.contains("tiktok.com") || trimmed.contains("vimeo.com") ||
-                                trimmed.contains("twitch.tv") || trimmed.contains("soundcloud.com"))
+                            && (trimmed.contains("youtube.com")
+                                || trimmed.contains("youtu.be")
+                                || trimmed.contains("instagram.com")
+                                || trimmed.contains("reddit.com")
+                                || trimmed.contains("redd.it")
+                                || trimmed.contains("imgur.com")
+                                || trimmed.contains("pinterest.com")
+                                || trimmed.contains("pin.it")
+                                || trimmed.contains("x.com")
+                                || trimmed.contains("twitter.com")
+                                || trimmed.contains("tiktok.com")
+                                || trimmed.contains("vimeo.com")
+                                || trimmed.contains("twitch.tv")
+                                || trimmed.contains("soundcloud.com"))
                         {
-                            let _ = clip_tx.blocking_send(WorkerMessage::ClipboardCaptured { url: trimmed.to_string() });
+                            let _ = clip_tx.blocking_send(WorkerMessage::ClipboardCaptured {
+                                url: trimmed.to_string(),
+                            });
                         }
                     }
                 }
@@ -1974,15 +2252,22 @@ async fn main() -> Result<()> {
                         item.is_audio = false;
                     }
                 }
-                WorkerMessage::MetaFetched { id, info, resolved_auth } => {
+                WorkerMessage::MetaFetched {
+                    id,
+                    info,
+                    resolved_auth,
+                } => {
                     if let Some(item) = app.queue.iter_mut().find(|i| i.id == id) {
                         if info.is_live.unwrap_or(false) {
-                            item.status = ItemStatus::Failed("Live streams are not supported.".into());
+                            item.status =
+                                ItemStatus::Failed("Live streams are not supported.".into());
                             continue;
                         }
 
                         item.resolved_auth = resolved_auth;
-                        item.title = normalize_ytdlp_unicode(&info.title.clone().unwrap_or_else(|| "Untitled".into()));
+                        item.title = normalize_ytdlp_unicode(
+                            &info.title.clone().unwrap_or_else(|| "Untitled".into()),
+                        );
                         let ext_key = info.extractor_key.clone().unwrap_or_else(|| "Web".into());
                         item.platform = detect_platform_folder(&item.url, &ext_key).to_string();
                         item.description = info.description.clone().unwrap_or_default();
@@ -1996,13 +2281,21 @@ async fn main() -> Result<()> {
                         item.status = ItemStatus::FormatSelect;
                     }
                 }
-                WorkerMessage::ImageDetected { id, platform, resolved_auth } => {
+                WorkerMessage::ImageDetected {
+                    id,
+                    platform,
+                    resolved_auth,
+                } => {
                     if let Some(item) = app.queue.iter_mut().find(|i| i.id == id) {
                         item.platform = platform;
                         if resolved_auth.is_some() {
                             item.resolved_auth = resolved_auth;
                         }
-                        item.title = if is_reddit_url(&item.url) { "Reddit Post".into() } else { "Image Gallery".into() };
+                        item.title = if is_reddit_url(&item.url) {
+                            "Reddit Post".into()
+                        } else {
+                            "Image Gallery".into()
+                        };
                         item.description = "Uses Headless Browser DOM & Smart Auth Engine (auto-detects images, galleries & v.redd.it video).".into();
                         item.available_formats = vec![FormatChoice {
                             id: "gallery".into(),
@@ -2027,9 +2320,9 @@ async fn main() -> Result<()> {
                     }
                 }
                 WorkerMessage::Filename { id, file_name } => {
-                    if let Some(item) = app.queue.iter_mut().find(|i| i.id == id) { 
-                        item.target_files.push(file_name.clone()); 
-                        
+                    if let Some(item) = app.queue.iter_mut().find(|i| i.id == id) {
+                        item.target_files.push(file_name.clone());
+
                         if item.title.starts_with("http")
                             || item.title.contains("https://")
                             || item.title.contains("Playlist Track")
@@ -2039,13 +2332,20 @@ async fn main() -> Result<()> {
                             let cleaned = clean_title_from_filename(&file_name);
                             if !cleaned.is_empty() {
                                 item.title = cleaned;
-                                item.platform = detect_platform_folder(&item.url, &item.platform).to_string();
-                                item.description = "Metadata dynamically updated during download...".into();
+                                item.platform =
+                                    detect_platform_folder(&item.url, &item.platform).to_string();
+                                item.description =
+                                    "Metadata dynamically updated during download...".into();
                             }
                         }
                     }
                 }
-                WorkerMessage::Progress { id, percent, dl_bytes, total_bytes } => {
+                WorkerMessage::Progress {
+                    id,
+                    percent,
+                    dl_bytes,
+                    total_bytes,
+                } => {
                     if let Some(item) = app.queue.iter_mut().find(|i| i.id == id) {
                         item.stats.percent = percent;
                         item.stats.downloaded_bytes = dl_bytes;
@@ -2055,15 +2355,27 @@ async fn main() -> Result<()> {
                         let dt = now.duration_since(item.stats.last_update).as_secs_f64();
                         if dt > 0.5 {
                             let current_speed = (dl_bytes - item.stats.last_dl_bytes) / dt;
-                            if item.stats.smoothed_speed == 0.0 { item.stats.smoothed_speed = current_speed.max(0.0); }
-                            else { item.stats.smoothed_speed = (0.1 * current_speed + 0.9 * item.stats.smoothed_speed).max(0.0); }
+                            if item.stats.smoothed_speed == 0.0 {
+                                item.stats.smoothed_speed = current_speed.max(0.0);
+                            } else {
+                                item.stats.smoothed_speed = (0.1 * current_speed
+                                    + 0.9 * item.stats.smoothed_speed)
+                                    .max(0.0);
+                            }
                             item.stats.last_dl_bytes = dl_bytes;
                             item.stats.last_update = now;
                         }
-                        if let Some(start) = item.started_at { item.stats.elapsed = start.elapsed(); }
+                        if let Some(start) = item.started_at {
+                            item.stats.elapsed = start.elapsed();
+                        }
                     }
                 }
-                WorkerMessage::Finished { id, success, error, was_killed } => {
+                WorkerMessage::Finished {
+                    id,
+                    success,
+                    error,
+                    was_killed,
+                } => {
                     app.active_downloads.remove(&id);
                     if let Some(idx) = app.queue.iter().position(|i| i.id == id) {
                         app.queue[idx].stats.smoothed_speed = 0.0;
@@ -2109,7 +2421,8 @@ async fn main() -> Result<()> {
                                 if app.queue[idx].retries < 2 && !is_auth_wall_error(&err_str) {
                                     app.queue[idx].retries += 1;
                                     app.queue[idx].status = ItemStatus::Queued;
-                                } else if !is_reddit_url(&item_url) && is_auth_wall_error(&err_str) {
+                                } else if !is_reddit_url(&item_url) && is_auth_wall_error(&err_str)
+                                {
                                     app.queue[idx].status = ItemStatus::Failed(
                                         "Login Required: Please log into this site in your browser (Chrome/Firefox/Brave/Edge) or add cookies.txt, then press [Enter] to retry.".into()
                                     );
@@ -2137,7 +2450,9 @@ async fn main() -> Result<()> {
                         };
                         app.input_url.clear();
                         if !app.add_urls_to_queue(combined) {
-                            app.set_input_warning("⚠️ Ignored non-URL text! Paste a valid http:// or https:// link.");
+                            app.set_input_warning(
+                                "⚠️ Ignored non-URL text! Paste a valid http:// or https:// link.",
+                            );
                         } else {
                             app.input_warning = None;
                         }
@@ -2156,17 +2471,25 @@ async fn main() -> Result<()> {
                             }
                             KeyCode::Up => {
                                 let cur = app.history_state.selected().unwrap_or(0);
-                                if cur > 0 { app.history_state.select(Some(cur - 1)); }
+                                if cur > 0 {
+                                    app.history_state.select(Some(cur - 1));
+                                }
                             }
                             KeyCode::Down => {
                                 let cur = app.history_state.selected().unwrap_or(0);
-                                if cur + 1 < len { app.history_state.select(Some(cur + 1)); }
+                                if cur + 1 < len {
+                                    app.history_state.select(Some(cur + 1));
+                                }
                             }
                             KeyCode::Enter => {
                                 let sel = app.history_state.selected().unwrap_or(0);
                                 let target_url = match app.history_tab {
-                                    HistoryTab::Downloads => app.history.download_history.get(sel).map(|e| e.url.clone()),
-                                    HistoryTab::Searches => app.history.search_history.get(sel).map(|e| e.url.clone()),
+                                    HistoryTab::Downloads => {
+                                        app.history.download_history.get(sel).map(|e| e.url.clone())
+                                    }
+                                    HistoryTab::Searches => {
+                                        app.history.search_history.get(sel).map(|e| e.url.clone())
+                                    }
                                 };
                                 if let Some(u) = target_url {
                                     let _ = app.add_urls_to_queue(u);
@@ -2225,11 +2548,15 @@ async fn main() -> Result<()> {
                         match key.code {
                             KeyCode::Up => {
                                 let cur = app.auth_state.selected().unwrap_or(0);
-                                if cur > 0 { app.auth_state.select(Some(cur - 1)); }
+                                if cur > 0 {
+                                    app.auth_state.select(Some(cur - 1));
+                                }
                             }
                             KeyCode::Down => {
                                 let cur = app.auth_state.selected().unwrap_or(0);
-                                if cur + 1 < modes.len() { app.auth_state.select(Some(cur + 1)); }
+                                if cur + 1 < modes.len() {
+                                    app.auth_state.select(Some(cur + 1));
+                                }
                             }
                             KeyCode::Enter => {
                                 let sel = app.auth_state.selected().unwrap_or(0);
@@ -2246,22 +2573,31 @@ async fn main() -> Result<()> {
                         continue;
                     }
 
-                    let active_format_idx = app.queue.iter().position(|i| i.status == ItemStatus::FormatSelect);
+                    let active_format_idx = app
+                        .queue
+                        .iter()
+                        .position(|i| i.status == ItemStatus::FormatSelect);
 
                     if let Some(idx) = active_format_idx {
                         let total_formats = app.queue[idx].available_formats.len();
                         match key.code {
                             KeyCode::Up => {
                                 let cur = app.format_state.selected().unwrap_or(0);
-                                if cur > 0 { app.format_state.select(Some(cur - 1)); }
+                                if cur > 0 {
+                                    app.format_state.select(Some(cur - 1));
+                                }
                             }
                             KeyCode::Down => {
                                 let cur = app.format_state.selected().unwrap_or(0);
-                                if cur + 1 < total_formats { app.format_state.select(Some(cur + 1)); }
+                                if cur + 1 < total_formats {
+                                    app.format_state.select(Some(cur + 1));
+                                }
                             }
                             KeyCode::Enter => {
                                 let sel = app.format_state.selected().unwrap_or(0);
-                                if let Some(format_choice) = app.queue[idx].available_formats.get(sel).cloned() {
+                                if let Some(format_choice) =
+                                    app.queue[idx].available_formats.get(sel).cloned()
+                                {
                                     let chosen_format = format_choice.id;
                                     let is_audio = format_choice.is_audio;
                                     let is_image = format_choice.is_image;
@@ -2275,12 +2611,26 @@ async fn main() -> Result<()> {
                                         let mut new_items = Vec::new();
 
                                         for (seq_i, e) in entries.into_iter().enumerate() {
-                                            let entry_url = e.url.or(e.id.map(|id| format!("https://youtu.be/{}", id))).unwrap_or_default();
-                                            let raw_title = normalize_ytdlp_unicode(&e.title.unwrap_or_else(|| "Playlist Track".into()));
-                                            if entry_url.is_empty() { continue; }
+                                            let entry_url = e
+                                                .url
+                                                .or(e
+                                                    .id
+                                                    .map(|id| format!("https://youtu.be/{}", id)))
+                                                .unwrap_or_default();
+                                            let raw_title = normalize_ytdlp_unicode(
+                                                &e.title.unwrap_or_else(|| "Playlist Track".into()),
+                                            );
+                                            if entry_url.is_empty() {
+                                                continue;
+                                            }
 
                                             let entry_title = if total_entries > 1 {
-                                                format!("{:0width$}_{}", seq_i + 1, raw_title, width = pad_width)
+                                                format!(
+                                                    "{:0width$}_{}",
+                                                    seq_i + 1,
+                                                    raw_title,
+                                                    width = pad_width
+                                                )
                                             } else {
                                                 raw_title
                                             };
@@ -2288,20 +2638,43 @@ async fn main() -> Result<()> {
                                             let item_id = app.next_id;
                                             app.next_id += 1;
 
-                                            let item_is_image = is_image || is_direct_image_or_gallery_url(&entry_url) || is_reddit_url(&entry_url);
-                                            let item_platform = detect_platform_folder(&entry_url, "").to_string();
+                                            let item_is_image = is_image
+                                                || is_direct_image_or_gallery_url(&entry_url)
+                                                || is_reddit_url(&entry_url);
+                                            let item_platform =
+                                                detect_platform_folder(&entry_url, "").to_string();
 
                                             new_items.push(QueueItem {
-                                                id: item_id, url: entry_url, title: entry_title, platform: item_platform,
-                                                description: String::new(), status: ItemStatus::Queued, 
-                                                available_formats: get_quick_presets(), chosen_format_id: Some(chosen_format.clone()),
-                                                is_audio: if item_is_image { false } else { is_audio },
+                                                id: item_id,
+                                                url: entry_url,
+                                                title: entry_title,
+                                                platform: item_platform,
+                                                description: String::new(),
+                                                status: ItemStatus::Queued,
+                                                available_formats: get_quick_presets(),
+                                                chosen_format_id: Some(chosen_format.clone()),
+                                                is_audio: if item_is_image {
+                                                    false
+                                                } else {
+                                                    is_audio
+                                                },
                                                 is_image: item_is_image,
-                                                target_files: Vec::new(), stats: DownloadStats::default(),
-                                                started_at: None, playlist_entries: None,
-                                                target_folder: if is_batch_paste { None } else { Some(folder_name.clone()) },
-                                                sequence_index: if total_entries > 1 { Some((seq_i + 1, total_entries)) } else { None },
-                                                retries: 0, resolved_auth: parent_auth.clone(),
+                                                target_files: Vec::new(),
+                                                stats: DownloadStats::default(),
+                                                started_at: None,
+                                                playlist_entries: None,
+                                                target_folder: if is_batch_paste {
+                                                    None
+                                                } else {
+                                                    Some(folder_name.clone())
+                                                },
+                                                sequence_index: if total_entries > 1 {
+                                                    Some((seq_i + 1, total_entries))
+                                                } else {
+                                                    None
+                                                },
+                                                retries: 0,
+                                                resolved_auth: parent_auth.clone(),
                                             });
                                         }
 
@@ -2339,15 +2712,25 @@ async fn main() -> Result<()> {
                                 app.show_history_modal = true;
                                 app.history_state.select(Some(0));
                             }
-                            KeyCode::F(5) => { app.toggle_pause_download().await; }
-                            KeyCode::F(6) => { app.skip_active_download().await; }
-                            KeyCode::F(7) => { app.nuke_queue_and_cancel().await; }
-                            KeyCode::F(8) => { app.show_auth_modal = true; }
+                            KeyCode::F(5) => {
+                                app.toggle_pause_download().await;
+                            }
+                            KeyCode::F(6) => {
+                                app.skip_active_download().await;
+                            }
+                            KeyCode::F(7) => {
+                                app.nuke_queue_and_cancel().await;
+                            }
+                            KeyCode::F(8) => {
+                                app.show_auth_modal = true;
+                            }
                             KeyCode::F(9) => {
                                 if let Some(idx) = app.queue_state.selected() {
                                     if let Some(item) = app.queue.get(idx) {
                                         match item.status {
-                                            ItemStatus::Completed | ItemStatus::Downloading | ItemStatus::Paused => {
+                                            ItemStatus::Completed
+                                            | ItemStatus::Downloading
+                                            | ItemStatus::Paused => {
                                                 let target_dir = get_base_download_dir(item);
                                                 open_folder_in_os(&target_dir);
                                             }
@@ -2363,11 +2746,16 @@ async fn main() -> Result<()> {
                             }
                             KeyCode::Delete => {
                                 if let Some(idx) = app.queue_state.selected() {
-                                    if !app.queue.is_empty() && app.queue[idx].status != ItemStatus::Downloading {
+                                    if !app.queue.is_empty()
+                                        && app.queue[idx].status != ItemStatus::Downloading
+                                    {
                                         cleanup_item_garbage(&app.queue[idx]);
                                         app.queue.remove(idx);
-                                        if app.queue.is_empty() { app.queue_state.select(None); }
-                                        else if idx >= app.queue.len() { app.queue_state.select(Some(app.queue.len() - 1)); }
+                                        if app.queue.is_empty() {
+                                            app.queue_state.select(None);
+                                        } else if idx >= app.queue.len() {
+                                            app.queue_state.select(Some(app.queue.len() - 1));
+                                        }
                                     }
                                 }
                             }
@@ -2383,23 +2771,29 @@ async fn main() -> Result<()> {
                                 } else if let Some(idx) = app.queue_state.selected() {
                                     let status = app.queue[idx].status.clone();
                                     match status {
-                                        ItemStatus::New | ItemStatus::Failed(_) | ItemStatus::Ready => {
+                                        ItemStatus::New
+                                        | ItemStatus::Failed(_)
+                                        | ItemStatus::Ready => {
                                             let raw_url = app.queue[idx].url.clone();
                                             app.queue[idx].retries = 0;
-                                            app.queue[idx].resolved_auth = if app.auth_mode == AuthMode::SmartAuto {
-                                                None
-                                            } else {
-                                                Some(app.auth_mode.clone())
-                                            };
+                                            app.queue[idx].resolved_auth =
+                                                if app.auth_mode == AuthMode::SmartAuto {
+                                                    None
+                                                } else {
+                                                    Some(app.auth_mode.clone())
+                                                };
 
                                             if raw_url == "batch" {
-                                                app.queue[idx].available_formats = get_quick_presets();
+                                                app.queue[idx].available_formats =
+                                                    get_quick_presets();
                                                 app.queue[idx].status = ItemStatus::FormatSelect;
                                             } else {
                                                 let plat = detect_platform_folder(&raw_url, "");
                                                 app.history.record_search(&raw_url, plat);
 
-                                                if app.queue[idx].chosen_format_id.is_some() || app.queue[idx].is_image {
+                                                if app.queue[idx].chosen_format_id.is_some()
+                                                    || app.queue[idx].is_image
+                                                {
                                                     app.queue[idx].status = ItemStatus::Queued;
                                                     continue;
                                                 }
@@ -2409,41 +2803,69 @@ async fn main() -> Result<()> {
                                                 let item_id = app.queue[idx].id;
                                                 let tx = app.worker_tx.clone();
                                                 let auth_mode = app.auth_mode.clone();
-                                                let initial_auth = app.queue[idx].resolved_auth.clone();
+                                                let initial_auth =
+                                                    app.queue[idx].resolved_auth.clone();
 
                                                 tokio::spawn(async move {
                                                     let url = resolve_short_url(&raw_url).await;
                                                     if url != raw_url {
-                                                        let _ = tx.send(WorkerMessage::UrlResolved { id: item_id, resolved_url: url.clone() }).await;
+                                                        let _ = tx
+                                                            .send(WorkerMessage::UrlResolved {
+                                                                id: item_id,
+                                                                resolved_url: url.clone(),
+                                                            })
+                                                            .await;
                                                     }
 
-                                                    let platform_name = detect_platform_folder(&url, "").to_string();
+                                                    let platform_name =
+                                                        detect_platform_folder(&url, "")
+                                                            .to_string();
 
-                                                    if is_direct_image_or_gallery_url(&url) || is_reddit_url(&url) {
-                                                        let _ = tx.send(WorkerMessage::ImageDetected {
-                                                            id: item_id,
-                                                            platform: platform_name,
-                                                            resolved_auth: initial_auth,
-                                                        }).await;
+                                                    if is_direct_image_or_gallery_url(&url)
+                                                        || is_reddit_url(&url)
+                                                    {
+                                                        let _ = tx
+                                                            .send(WorkerMessage::ImageDetected {
+                                                                id: item_id,
+                                                                platform: platform_name,
+                                                                resolved_auth: initial_auth,
+                                                            })
+                                                            .await;
                                                         return;
                                                     }
 
                                                     match fetch_metadata(&url, auth_mode).await {
                                                         Ok((info, resolved_auth)) => {
-                                                            let _ = tx.send(WorkerMessage::MetaFetched { id: item_id, info, resolved_auth }).await;
+                                                            let _ = tx
+                                                                .send(WorkerMessage::MetaFetched {
+                                                                    id: item_id,
+                                                                    info,
+                                                                    resolved_auth,
+                                                                })
+                                                                .await;
                                                         }
                                                         Err(err) => {
                                                             let err_str = err.to_string();
                                                             if is_no_video_error(&err_str) {
-                                                                let detected_auth = if err_str.contains("Auth:Chrome") {
+                                                                let detected_auth = if err_str
+                                                                    .contains("Auth:Chrome")
+                                                                {
                                                                     Some(AuthMode::Chrome)
-                                                                } else if err_str.contains("Auth:Brave") {
+                                                                } else if err_str
+                                                                    .contains("Auth:Brave")
+                                                                {
                                                                     Some(AuthMode::Brave)
-                                                                } else if err_str.contains("Auth:Firefox") {
+                                                                } else if err_str
+                                                                    .contains("Auth:Firefox")
+                                                                {
                                                                     Some(AuthMode::Firefox)
-                                                                } else if err_str.contains("Auth:Edge") {
+                                                                } else if err_str
+                                                                    .contains("Auth:Edge")
+                                                                {
                                                                     Some(AuthMode::Edge)
-                                                                } else if err_str.contains("Auth:CookiesFile") {
+                                                                } else if err_str
+                                                                    .contains("Auth:CookiesFile")
+                                                                {
                                                                     Some(AuthMode::CookiesFile)
                                                                 } else {
                                                                     initial_auth
@@ -2454,7 +2876,14 @@ async fn main() -> Result<()> {
                                                                     resolved_auth: detected_auth,
                                                                 }).await;
                                                             } else {
-                                                                let _ = tx.send(WorkerMessage::MetaFailed { id: item_id, error: err_str }).await;
+                                                                let _ = tx
+                                                                    .send(
+                                                                        WorkerMessage::MetaFailed {
+                                                                            id: item_id,
+                                                                            error: err_str,
+                                                                        },
+                                                                    )
+                                                                    .await;
                                                             }
                                                         }
                                                     }
@@ -2465,17 +2894,23 @@ async fn main() -> Result<()> {
                                     }
                                 }
                             }
-                            KeyCode::Backspace => { app.input_url.pop(); }
+                            KeyCode::Backspace => {
+                                app.input_url.pop();
+                            }
                             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                 app.input_url.clear();
                             }
                             KeyCode::Up => {
                                 let cur = app.queue_state.selected().unwrap_or(0);
-                                if cur > 0 { app.queue_state.select(Some(cur - 1)); }
+                                if cur > 0 {
+                                    app.queue_state.select(Some(cur - 1));
+                                }
                             }
                             KeyCode::Down => {
                                 let cur = app.queue_state.selected().unwrap_or(0);
-                                if cur + 1 < app.queue.len() { app.queue_state.select(Some(cur + 1)); }
+                                if cur + 1 < app.queue.len() {
+                                    app.queue_state.select(Some(cur + 1));
+                                }
                             }
                             KeyCode::Char(ch) => {
                                 app.input_warning = None;
@@ -2489,11 +2924,17 @@ async fn main() -> Result<()> {
             }
         }
 
-        if last_tick.elapsed() >= tick_rate { last_tick = Instant::now(); }
+        if last_tick.elapsed() >= tick_rate {
+            last_tick = Instant::now();
+        }
     }
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableBracketedPaste)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableBracketedPaste
+    )?;
     terminal.show_cursor()?;
 
     if app.trigger_self_update_exit {
@@ -2507,8 +2948,14 @@ async fn main() -> Result<()> {
 
 fn ui(f: &mut Frame, app: &mut App) {
     let main_chunks = Layout::default()
-        .direction(Direction::Vertical).margin(1)
-        .constraints([ Constraint::Length(3), Constraint::Min(8), Constraint::Length(10), Constraint::Length(1) ])
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(8),
+            Constraint::Length(10),
+            Constraint::Length(1),
+        ])
         .split(f.area());
 
     let update_banner = if let Some(ref tag) = app.available_update {
@@ -2517,26 +2964,36 @@ fn ui(f: &mut Frame, app: &mut App) {
         String::new()
     };
 
-    let (header_title, border_color, display_text, text_color) = if let Some((ref warn, _)) = app.input_warning {
-        (
-            format!(" Smart Input Shield v{} [{}]{} ", APP_VERSION, app.auth_mode.badge(), update_banner),
-            Color::LightRed,
-            warn.as_str(),
-            Color::LightRed,
-        )
-    } else {
-        (
-            format!(
-                " Add URL(s) to Queue v{} (Paste link/playlist + Enter | Ctrl+U Clear) [{}]{} ",
-                APP_VERSION,
-                app.auth_mode.badge(),
-                update_banner
-            ),
-            if app.available_update.is_some() { Color::LightGreen } else { Color::White },
-            app.input_url.as_str(),
-            Color::Yellow,
-        )
-    };
+    let (header_title, border_color, display_text, text_color) =
+        if let Some((ref warn, _)) = app.input_warning {
+            (
+                format!(
+                    " Smart Input Shield v{} [{}]{} ",
+                    APP_VERSION,
+                    app.auth_mode.badge(),
+                    update_banner
+                ),
+                Color::LightRed,
+                warn.as_str(),
+                Color::LightRed,
+            )
+        } else {
+            (
+                format!(
+                    " Add URL(s) to Queue v{} (Paste link/playlist + Enter | Ctrl+U Clear) [{}]{} ",
+                    APP_VERSION,
+                    app.auth_mode.badge(),
+                    update_banner
+                ),
+                if app.available_update.is_some() {
+                    Color::LightGreen
+                } else {
+                    Color::White
+                },
+                app.input_url.as_str(),
+                Color::Yellow,
+            )
+        };
 
     let input = Paragraph::new(display_text)
         .style(Style::default().fg(text_color))
@@ -2548,41 +3005,67 @@ fn ui(f: &mut Frame, app: &mut App) {
         );
     f.render_widget(input, main_chunks[0]);
 
-    let body_chunks = Layout::default().direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(45), Constraint::Percentage(55)]).split(main_chunks[1]);
+    let body_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
+        .split(main_chunks[1]);
 
-    let queue_items: Vec<ListItem> = app.queue.iter().map(|item| {
-        let (status_icon, color) = match &item.status {
-            ItemStatus::New => ("🆕 Added", Color::DarkGray),
-            ItemStatus::Queued => ("⏳ Queued", Color::DarkGray),
-            ItemStatus::FetchingMeta => ("🔍 Inspecting...", Color::Cyan),
-            ItemStatus::FormatSelect => ("⚙ Select Format", Color::Yellow),
-            ItemStatus::Downloading => ("⬇ Downloading", Color::Green),
-            ItemStatus::Paused => ("⏸ Paused", Color::LightYellow),
-            ItemStatus::Completed => ("✔ Done", Color::Blue),
-            ItemStatus::Skipped => ("⏭ Skipped", Color::Magenta),
-            ItemStatus::Failed(_) => ("✖ Failed", Color::Red),
-            ItemStatus::Ready => ("🟢 Ready", Color::Cyan),
-        };
-        
-        let auth_tag = if item.resolved_auth.is_some() { "🔒 " } else { "" };
-        let type_tag = if item.is_image { "🖼️ " } else if item.is_audio { "🎵 " } else { "" };
-        let title_prefix = if item.retries > 0 && item.status == ItemStatus::Downloading {
-            format!("[Retry {}] {}{}", item.retries, auth_tag, type_tag)
-        } else {
-            format!("{}{}", auth_tag, type_tag)
-        };
-        let full_title = format!("{}{}", title_prefix, item.title);
-        let title_trunc = truncate_chars(&full_title, 30);
-        
-        ListItem::new(Line::from(vec![
-            Span::styled(format!("{:<16}", status_icon), Style::default().fg(color)),
-            Span::raw(" "), Span::styled(title_trunc, Style::default().add_modifier(Modifier::BOLD)),
-        ]))
-    }).collect();
+    let queue_items: Vec<ListItem> = app
+        .queue
+        .iter()
+        .map(|item| {
+            let (status_icon, color) = match &item.status {
+                ItemStatus::New => ("🆕 Added", Color::DarkGray),
+                ItemStatus::Queued => ("⏳ Queued", Color::DarkGray),
+                ItemStatus::FetchingMeta => ("🔍 Inspecting...", Color::Cyan),
+                ItemStatus::FormatSelect => ("⚙ Select Format", Color::Yellow),
+                ItemStatus::Downloading => ("⬇ Downloading", Color::Green),
+                ItemStatus::Paused => ("⏸ Paused", Color::LightYellow),
+                ItemStatus::Completed => ("✔ Done", Color::Blue),
+                ItemStatus::Skipped => ("⏭ Skipped", Color::Magenta),
+                ItemStatus::Failed(_) => ("✖ Failed", Color::Red),
+                ItemStatus::Ready => ("🟢 Ready", Color::Cyan),
+            };
 
-    let queue_list = List::new(queue_items).block(Block::default().borders(Borders::ALL).title(" Media Queue (↑/↓ to inspect) "))
-        .highlight_style(Style::default().bg(Color::Rgb(30, 30, 45)).add_modifier(Modifier::BOLD));
+            let auth_tag = if item.resolved_auth.is_some() {
+                "🔒 "
+            } else {
+                ""
+            };
+            let type_tag = if item.is_image {
+                "🖼️ "
+            } else if item.is_audio {
+                "🎵 "
+            } else {
+                ""
+            };
+            let title_prefix = if item.retries > 0 && item.status == ItemStatus::Downloading {
+                format!("[Retry {}] {}{}", item.retries, auth_tag, type_tag)
+            } else {
+                format!("{}{}", auth_tag, type_tag)
+            };
+            let full_title = format!("{}{}", title_prefix, item.title);
+            let title_trunc = truncate_chars(&full_title, 30);
+
+            ListItem::new(Line::from(vec![
+                Span::styled(format!("{:<16}", status_icon), Style::default().fg(color)),
+                Span::raw(" "),
+                Span::styled(title_trunc, Style::default().add_modifier(Modifier::BOLD)),
+            ]))
+        })
+        .collect();
+
+    let queue_list = List::new(queue_items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Media Queue (↑/↓ to inspect) "),
+        )
+        .highlight_style(
+            Style::default()
+                .bg(Color::Rgb(30, 30, 45))
+                .add_modifier(Modifier::BOLD),
+        );
     f.render_stateful_widget(queue_list, body_chunks[0], &mut app.queue_state);
 
     let selected_idx = app.queue_state.selected().unwrap_or(0);
@@ -2600,31 +3083,79 @@ fn ui(f: &mut Frame, app: &mut App) {
         };
 
         let mut detail_lines = vec![
-            Line::from(vec![Span::styled("Platform: ", Style::default().fg(Color::Cyan)), Span::raw(&selected_item.platform)]),
-            Line::from(vec![Span::styled("Type:     ", Style::default().fg(Color::Cyan)), Span::raw(media_type_str)]),
-            Line::from(vec![Span::styled("Title:    ", Style::default().fg(Color::Cyan)), Span::styled(&selected_item.title, Style::default().add_modifier(Modifier::BOLD))]),
-            Line::from(vec![Span::styled("Session:  ", Style::default().fg(Color::Cyan)), Span::styled(auth_status_str, Style::default().fg(if selected_item.resolved_auth.is_some() { Color::LightGreen } else { Color::Gray }))]),
-            Line::from(vec![Span::styled("Source:   ", Style::default().fg(Color::Cyan)), Span::styled(&selected_item.url, Style::default().fg(Color::DarkGray))]),
-            Line::from(vec![Span::styled("Save Path:", Style::default().fg(Color::Cyan)), Span::styled(get_base_download_dir(selected_item).to_string_lossy().to_string(), Style::default().fg(Color::DarkGray))]),
+            Line::from(vec![
+                Span::styled("Platform: ", Style::default().fg(Color::Cyan)),
+                Span::raw(&selected_item.platform),
+            ]),
+            Line::from(vec![
+                Span::styled("Type:     ", Style::default().fg(Color::Cyan)),
+                Span::raw(media_type_str),
+            ]),
+            Line::from(vec![
+                Span::styled("Title:    ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    &selected_item.title,
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("Session:  ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    auth_status_str,
+                    Style::default().fg(if selected_item.resolved_auth.is_some() {
+                        Color::LightGreen
+                    } else {
+                        Color::Gray
+                    }),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("Source:   ", Style::default().fg(Color::Cyan)),
+                Span::styled(&selected_item.url, Style::default().fg(Color::DarkGray)),
+            ]),
+            Line::from(vec![
+                Span::styled("Save Path:", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    get_base_download_dir(selected_item)
+                        .to_string_lossy()
+                        .to_string(),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]),
         ];
 
         if let Some((seq_i, total)) = selected_item.sequence_index {
             detail_lines.push(Line::from(vec![
                 Span::styled("Sequence: ", Style::default().fg(Color::LightBlue)),
-                Span::raw(format!("Track {} of {} (Auto-Numbered + Upload Date)", seq_i, total)),
+                Span::raw(format!(
+                    "Track {} of {} (Auto-Numbered + Upload Date)",
+                    seq_i, total
+                )),
             ]));
         } else if let Some(entries) = &selected_item.playlist_entries {
-            detail_lines.push(Line::from(vec![Span::styled("Tracks:   ", Style::default().fg(Color::LightBlue)), Span::raw(format!("{} items grouped", entries.len()))]));
+            detail_lines.push(Line::from(vec![
+                Span::styled("Tracks:   ", Style::default().fg(Color::LightBlue)),
+                Span::raw(format!("{} items grouped", entries.len())),
+            ]));
         }
 
         if let ItemStatus::Failed(ref err) = selected_item.status {
             detail_lines.push(Line::from(""));
             let clean_err = err.replace('\n', " ");
-            detail_lines.push(Line::from(vec![Span::styled("Error:    ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)), Span::styled(clean_err, Style::default().fg(Color::Red))]));
+            detail_lines.push(Line::from(vec![
+                Span::styled(
+                    "Error:    ",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(clean_err, Style::default().fg(Color::Red)),
+            ]));
         }
 
         detail_lines.push(Line::from(""));
-        detail_lines.push(Line::from(Span::styled("Description Preview:", Style::default().fg(Color::LightMagenta))));
+        detail_lines.push(Line::from(Span::styled(
+            "Description Preview:",
+            Style::default().fg(Color::LightMagenta),
+        )));
 
         let desc_preview = if selected_item.description.is_empty() {
             "No description available.".to_string()
@@ -2632,30 +3163,54 @@ fn ui(f: &mut Frame, app: &mut App) {
             truncate_chars(&selected_item.description, 400)
         };
         for line in desc_preview.lines() {
-            detail_lines.push(Line::from(Span::styled(line.to_string(), Style::default().fg(Color::Gray))));
+            detail_lines.push(Line::from(Span::styled(
+                line.to_string(),
+                Style::default().fg(Color::Gray),
+            )));
         }
 
         let details = Paragraph::new(detail_lines)
-            .block(Block::default().borders(Borders::ALL).title(" Media Details "))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Media Details "),
+            )
             .wrap(Wrap { trim: true });
         f.render_widget(details, body_chunks[1]);
     } else {
-        let empty_msg = Paragraph::new("Queue is empty. Paste any URL above, copy a link, or press [F4] for History.").block(Block::default().borders(Borders::ALL).title(" Media Details "));
+        let empty_msg = Paragraph::new(
+            "Queue is empty. Paste any URL above, copy a link, or press [F4] for History.",
+        )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Media Details "),
+        );
         f.render_widget(empty_msg, body_chunks[1]);
     }
 
-    let mut active_items: Vec<&QueueItem> = app.queue.iter()
+    let mut active_items: Vec<&QueueItem> = app
+        .queue
+        .iter()
         .filter(|i| i.status == ItemStatus::Downloading)
         .collect();
-    
-    let paused_items: Vec<&QueueItem> = app.queue.iter()
+
+    let paused_items: Vec<&QueueItem> = app
+        .queue
+        .iter()
         .filter(|i| i.status == ItemStatus::Paused)
         .collect();
-        
+
     active_items.extend(paused_items);
 
-    let container_title = format!(" Active Downloads ({}/{}) ", app.active_downloads.len(), app.max_concurrent_downloads);
-    let monitor_block = Block::default().borders(Borders::ALL).title(container_title);
+    let container_title = format!(
+        " Active Downloads ({}/{}) ",
+        app.active_downloads.len(),
+        app.max_concurrent_downloads
+    );
+    let monitor_block = Block::default()
+        .borders(Borders::ALL)
+        .title(container_title);
     let inner_area = monitor_block.inner(main_chunks[2]);
     f.render_widget(monitor_block, main_chunks[2]);
 
@@ -2669,34 +3224,69 @@ fn ui(f: &mut Frame, app: &mut App) {
             constraints.push(Constraint::Length(1));
         }
         constraints.push(Constraint::Min(0));
-        
-        let row_chunks = Layout::default().direction(Direction::Vertical).constraints(constraints).split(inner_area);
-        
+
+        let row_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(constraints)
+            .split(inner_area);
+
         for (i, item) in active_items.iter().enumerate().take(4) {
             let stats = &item.stats;
             let elapsed_sec = stats.elapsed.as_secs();
             let time_formatted = format!("{:02}:{:02}", elapsed_sec / 60, elapsed_sec % 60);
 
             let speed_str = format!("{}/s", format_bytes(stats.smoothed_speed));
-            let eta_secs = if stats.smoothed_speed > 0.0 && stats.total_bytes > stats.downloaded_bytes {
-                (stats.total_bytes - stats.downloaded_bytes) / stats.smoothed_speed
-            } else { 0.0 };
+            let eta_secs =
+                if stats.smoothed_speed > 0.0 && stats.total_bytes > stats.downloaded_bytes {
+                    (stats.total_bytes - stats.downloaded_bytes) / stats.smoothed_speed
+                } else {
+                    0.0
+                };
             let eta_str = format_time(eta_secs);
-            let dl_str = format!("{} / {}", format_bytes(stats.downloaded_bytes), format_bytes(stats.total_bytes));
+            let dl_str = format!(
+                "{} / {}",
+                format_bytes(stats.downloaded_bytes),
+                format_bytes(stats.total_bytes)
+            );
 
             let safe_title = truncate_chars(&item.title, 20);
 
             let stats_info = Line::from(vec![
-                Span::styled(format!("{:<20} | ", safe_title), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled("SPD: ", Style::default().fg(Color::Cyan)), Span::styled(format!("{:<12}", speed_str), Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled("ETA: ", Style::default().fg(Color::Cyan)), Span::styled(format!("{:<8}", eta_str), Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled("DL: ", Style::default().fg(Color::Cyan)), Span::styled(format!("{:<18}", dl_str), Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled("TIME: ", Style::default().fg(Color::Cyan)), Span::styled(time_formatted, Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("{:<20} | ", safe_title),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("SPD: ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    format!("{:<12}", speed_str),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("ETA: ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    format!("{:<8}", eta_str),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("DL: ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    format!("{:<18}", dl_str),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("TIME: ", Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    time_formatted,
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
             ]);
 
             f.render_widget(Paragraph::new(stats_info), row_chunks[i * 2]);
 
-            let gauge_color = if item.status == ItemStatus::Paused { Color::Yellow } else { Color::Green };
+            let gauge_color = if item.status == ItemStatus::Paused {
+                Color::Yellow
+            } else {
+                Color::Green
+            };
             let gauge = Gauge::default()
                 .use_unicode(true)
                 .gauge_style(Style::default().fg(gauge_color).bg(Color::Rgb(40, 40, 40)))
@@ -2705,63 +3295,138 @@ fn ui(f: &mut Frame, app: &mut App) {
         }
     }
 
-    let is_modal_open = app.queue.iter().any(|i| i.status == ItemStatus::FormatSelect)
+    let is_modal_open = app
+        .queue
+        .iter()
+        .any(|i| i.status == ItemStatus::FormatSelect)
         || app.show_auth_modal
         || app.show_history_modal;
 
     let help_text = if app.show_history_modal {
         Line::from(vec![
-            Span::styled("[Tab/←/→]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)), Span::raw(" Switch Tab | "),
-            Span::styled("[Enter]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)), Span::raw(" Re-Queue URL | "),
-            Span::styled("[F9]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)), Span::raw(" Open Folder | "),
-            Span::styled("[Del]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Delete Entry | "),
-            Span::styled("[F7]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)), Span::raw(" Clear Tab | "),
-            Span::styled("[Esc/F4]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Close"),
+            Span::styled(
+                "[Tab/←/→]",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" Switch Tab | "),
+            Span::styled(
+                "[Enter]",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" Re-Queue URL | "),
+            Span::styled(
+                "[F9]",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" Open Folder | "),
+            Span::styled("[Del]", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" Delete Entry | "),
+            Span::styled(
+                "[F7]",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" Clear Tab | "),
+            Span::styled("[Esc/F4]", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" Close"),
         ])
     } else if is_modal_open {
         Line::from(vec![
-            Span::styled("[Enter]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Confirm Selection | "),
-            Span::styled("[Esc/Bksp]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Close Modal"),
+            Span::styled("[Enter]", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" Confirm Selection | "),
+            Span::styled("[Esc/Bksp]", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" Close Modal"),
         ])
     } else {
         let mut spans = vec![
-            Span::styled("[Enter]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Inspect | "),
+            Span::styled("[Enter]", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" Inspect | "),
         ];
         if let Some(ref tag) = app.available_update {
-            spans.push(Span::styled("[F3]", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)));
+            spans.push(Span::styled(
+                "[F3]",
+                Style::default()
+                    .fg(Color::LightGreen)
+                    .add_modifier(Modifier::BOLD),
+            ));
             spans.push(Span::raw(format!(" Update ({}) | ", tag)));
         }
         spans.extend(vec![
-            Span::styled("[F4]", Style::default().fg(Color::LightMagenta).add_modifier(Modifier::BOLD)), Span::raw(" History | "),
-            Span::styled("[F5]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Pause | "),
-            Span::styled("[F6]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Skip | "),
-            Span::styled("[F7]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Nuke | "),
-            Span::styled("[F8]", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)), Span::raw(" Auth | "),
-            Span::styled("[F9]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)), Span::raw(" Folder | "),
-            Span::styled("[Del]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Del | "),
-            Span::styled("[Esc]", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" Exit"),
+            Span::styled(
+                "[F4]",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" History | "),
+            Span::styled("[F5]", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" Pause | "),
+            Span::styled("[F6]", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" Skip | "),
+            Span::styled("[F7]", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" Nuke | "),
+            Span::styled(
+                "[F8]",
+                Style::default()
+                    .fg(Color::LightGreen)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" Auth | "),
+            Span::styled(
+                "[F9]",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" Folder | "),
+            Span::styled("[Del]", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" Del | "),
+            Span::styled("[Esc]", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" Exit"),
         ]);
         Line::from(spans)
     };
     f.render_widget(Paragraph::new(help_text), main_chunks[3]);
 
     // MODAL 1: Quality Format Selector
-    if let Some(idx) = app.queue.iter().position(|i| i.status == ItemStatus::FormatSelect) {
+    if let Some(idx) = app
+        .queue
+        .iter()
+        .position(|i| i.status == ItemStatus::FormatSelect)
+    {
         let area = centered_rect(65, 55, f.area());
         f.render_widget(Clear, area);
 
         let formats = &app.queue[idx].available_formats;
-        let items: Vec<ListItem> = formats.iter().map(|opt| {
-            ListItem::new(Line::from(vec![
-                Span::styled(format!("{:<50}", opt.label), Style::default().fg(Color::Yellow)),
-                Span::styled(format!("{:<6}", opt.ext), Style::default().fg(Color::Cyan)),
-                Span::styled(&opt.est_size, Style::default().fg(Color::Green)),
-            ]))
-        }).collect();
+        let items: Vec<ListItem> = formats
+            .iter()
+            .map(|opt| {
+                ListItem::new(Line::from(vec![
+                    Span::styled(
+                        format!("{:<50}", opt.label),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                    Span::styled(format!("{:<6}", opt.ext), Style::default().fg(Color::Cyan)),
+                    Span::styled(&opt.est_size, Style::default().fg(Color::Green)),
+                ]))
+            })
+            .collect();
 
         let format_list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title(format!(" Choose Quality Preset for: {} ", &app.queue[idx].title)))
-            .highlight_style(Style::default().bg(Color::Blue).add_modifier(Modifier::BOLD));
+            .block(Block::default().borders(Borders::ALL).title(format!(
+                " Choose Quality Preset for: {} ",
+                &app.queue[idx].title
+            )))
+            .highlight_style(
+                Style::default()
+                    .bg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            );
         f.render_stateful_widget(format_list, area, &mut app.format_state);
     }
 
@@ -2771,17 +3436,33 @@ fn ui(f: &mut Frame, app: &mut App) {
         f.render_widget(Clear, area);
 
         let modes = AuthMode::all();
-        let items: Vec<ListItem> = modes.iter().map(|m| {
-            let active_marker = if *m == app.auth_mode { "✔ " } else { "  " };
-            ListItem::new(Line::from(vec![
-                Span::styled(active_marker, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                Span::styled(m.label(), Style::default().fg(Color::Yellow)),
-            ]))
-        }).collect();
+        let items: Vec<ListItem> = modes
+            .iter()
+            .map(|m| {
+                let active_marker = if *m == app.auth_mode { "✔ " } else { "  " };
+                ListItem::new(Line::from(vec![
+                    Span::styled(
+                        active_marker,
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(m.label(), Style::default().fg(Color::Yellow)),
+                ]))
+            })
+            .collect();
 
         let auth_list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title(" [F8] Select Authentication Engine "))
-            .highlight_style(Style::default().bg(Color::Blue).add_modifier(Modifier::BOLD));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" [F8] Select Authentication Engine "),
+            )
+            .highlight_style(
+                Style::default()
+                    .bg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            );
         f.render_stateful_widget(auth_list, area, &mut app.auth_state);
     }
 
@@ -2811,16 +3492,37 @@ fn ui(f: &mut Frame, app: &mut App) {
                         Style::default().fg(Color::DarkGray),
                     )))]
                 } else {
-                    app.history.download_history.iter().map(|e| {
-                        let title_trunc = truncate_chars(&e.title, 34);
-                        ListItem::new(Line::from(vec![
-                            Span::styled(format!("{:<16} ", e.timestamp), Style::default().fg(Color::DarkGray)),
-                            Span::styled(format!("{:<10} ", e.platform), Style::default().fg(Color::Cyan)),
-                            Span::styled(format!("{:<6} ", e.media_type), Style::default().fg(Color::LightGreen)),
-                            Span::styled(format!("{:<35} ", title_trunc), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                            Span::styled(truncate_chars(&e.url, 32), Style::default().fg(Color::Gray)),
-                        ]))
-                    }).collect()
+                    app.history
+                        .download_history
+                        .iter()
+                        .map(|e| {
+                            let title_trunc = truncate_chars(&e.title, 34);
+                            ListItem::new(Line::from(vec![
+                                Span::styled(
+                                    format!("{:<16} ", e.timestamp),
+                                    Style::default().fg(Color::DarkGray),
+                                ),
+                                Span::styled(
+                                    format!("{:<10} ", e.platform),
+                                    Style::default().fg(Color::Cyan),
+                                ),
+                                Span::styled(
+                                    format!("{:<6} ", e.media_type),
+                                    Style::default().fg(Color::LightGreen),
+                                ),
+                                Span::styled(
+                                    format!("{:<35} ", title_trunc),
+                                    Style::default()
+                                        .fg(Color::Yellow)
+                                        .add_modifier(Modifier::BOLD),
+                                ),
+                                Span::styled(
+                                    truncate_chars(&e.url, 32),
+                                    Style::default().fg(Color::Gray),
+                                ),
+                            ]))
+                        })
+                        .collect()
                 }
             }
             HistoryTab::Searches => {
@@ -2830,13 +3532,23 @@ fn ui(f: &mut Frame, app: &mut App) {
                         Style::default().fg(Color::DarkGray),
                     )))]
                 } else {
-                    app.history.search_history.iter().map(|e| {
-                        ListItem::new(Line::from(vec![
-                            Span::styled(format!("{:<16} ", e.timestamp), Style::default().fg(Color::DarkGray)),
-                            Span::styled(format!("{:<12} ", e.platform), Style::default().fg(Color::Cyan)),
-                            Span::styled(&e.url, Style::default().fg(Color::Yellow)),
-                        ]))
-                    }).collect()
+                    app.history
+                        .search_history
+                        .iter()
+                        .map(|e| {
+                            ListItem::new(Line::from(vec![
+                                Span::styled(
+                                    format!("{:<16} ", e.timestamp),
+                                    Style::default().fg(Color::DarkGray),
+                                ),
+                                Span::styled(
+                                    format!("{:<12} ", e.platform),
+                                    Style::default().fg(Color::Cyan),
+                                ),
+                                Span::styled(&e.url, Style::default().fg(Color::Yellow)),
+                            ]))
+                        })
+                        .collect()
                 }
             }
         };
@@ -2848,14 +3560,30 @@ fn ui(f: &mut Frame, app: &mut App) {
                     .border_style(Style::default().fg(Color::LightMagenta))
                     .title(modal_title),
             )
-            .highlight_style(Style::default().bg(Color::Rgb(50, 35, 70)).add_modifier(Modifier::BOLD));
+            .highlight_style(
+                Style::default()
+                    .bg(Color::Rgb(50, 35, 70))
+                    .add_modifier(Modifier::BOLD),
+            );
         f.render_stateful_widget(hist_list, area, &mut app.history_state);
     }
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default().direction(Direction::Vertical)
-        .constraints([Constraint::Percentage((100 - percent_y) / 2), Constraint::Percentage(percent_y), Constraint::Percentage((100 - percent_y) / 2)]).split(r);
-    Layout::default().direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage((100 - percent_x) / 2), Constraint::Percentage(percent_x), Constraint::Percentage((100 - percent_x) / 2)]).split(popup_layout[1])[1]
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }

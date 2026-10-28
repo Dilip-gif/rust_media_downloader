@@ -309,7 +309,6 @@ if downloaded == 0:
 "#;
 
 // --- DYNAMIC ZERO-PADDED SEQUENCE FORMATTER ---
-// Total 9 -> "1_", Total 25 -> "01_", Total 100 -> "001_"
 fn format_sequence_prefix(seq_index: Option<(usize, usize)>) -> String {
     if let Some((idx, total)) = seq_index {
         if total > 1 {
@@ -955,7 +954,7 @@ struct QueuedTrack {
     url: String,
     title: String,
     playlist_folder: Option<String>,
-    sequence_index: Option<(usize, usize)>, // (1-based index, total_tracks_in_batch)
+    sequence_index: Option<(usize, usize)>,
 }
 
 fn resolution_tag_name(h: u32) -> &'static str {
@@ -1178,7 +1177,6 @@ async fn inspect_urls_and_detect_qualities(
             }
         }
 
-        // Playlist or Multi-Link Batch expansion
         if url.contains("list=") || url.contains("/playlist") {
             let mut cmd = Command::new(get_ytdlp_cmd());
             cmd.arg("-J")
@@ -1220,7 +1218,6 @@ async fn inspect_urls_and_detect_qualities(
         });
     }
 
-    // Assign dynamic zero-padded sequence indices (1..=total) if there are multiple tracks!
     let total_tracks = tracks.len();
     if total_tracks > 1 {
         let width = total_tracks.to_string().len().max(2);
@@ -1580,7 +1577,6 @@ async fn execute_ytdlp_download(
         cmd.arg(flag).arg(val);
     }
 
-    // For playlists/batches, include both the zero-padded sequence prefix AND the video's upload date!
     let date_token = if !seq_prefix.is_empty() {
         "_%(upload_date>%Y-%m-%d,release_date>%Y-%m-%d|Unknown-Date)s"
     } else {
@@ -1588,7 +1584,7 @@ async fn execute_ytdlp_download(
     };
 
     if choice.is_audio {
-        let tmpl = format!("{}{}%(title)s{}.%(ext)s", seq_prefix, "", date_token);
+        let tmpl = format!("{}%(title)s{}.%(ext)s", seq_prefix, date_token);
         cmd.arg("-f").arg("bestaudio/best")
            .arg("-x")
            .arg("--audio-format").arg("mp3")
@@ -1785,7 +1781,7 @@ impl QuickPopupApp {
 
         let (worker_tx, worker_rx) = mpsc::channel(100);
 
-        // 1. Single-Instance IPC Listener: Brings existing popup to front if user presses Super+M again!
+        // 1. Single-Instance IPC Listener
         let summon_tx = worker_tx.clone();
         let egui_ctx_clone = cc.egui_ctx.clone();
         std::thread::spawn(move || {
@@ -1798,7 +1794,7 @@ impl QuickPopupApp {
             }
         });
 
-        // 2. Check GitHub Releases in the background for new updates!
+        // 2. Check GitHub Releases in the background for new updates
         let update_tx = worker_tx.clone();
         rt.spawn(async move {
             if let Some(tag) = check_github_for_updates().await {
@@ -2192,71 +2188,85 @@ impl eframe::App for QuickPopupApp {
                     .inner_margin(egui::Margin::symmetric(18.0, 14.0)),
             )
             .show(ctx, |ui| {
-                // --- TOP HEADER ROW (Draggable Title Bar + Right-Side Action Buttons) ---
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let close_btn = egui::Button::new(
-                        egui::RichText::new("×").size(15.0).strong().color(theme.text_primary),
-                    )
-                    .rounding(egui::Rounding::same(14.0))
-                    .min_size(egui::vec2(28.0, 28.0))
-                    .fill(theme.card_elevated);
-
-                    if ui.add(close_btn).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Close (Esc)").clicked() {
-                        if self.phase == PopupPhase::Downloading || self.phase == PopupPhase::Paused {
-                            self.cancel_all_and_exit(ctx);
-                        } else {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                    }
-
-                    if let Some(ref new_tag) = self.available_update {
-                        ui.add_space(6.0);
-                        let upd_btn = egui::Button::new(
-                            egui::RichText::new(format!("⬆ Update to {} Now", new_tag))
-                                .size(12.0)
+                // --- TOP HEADER ROW (Strictly 28px tall inside ui.horizontal + Safe Single-Trigger Drag) ---
+                ui.horizontal(|ui| {
+                    let title_resp = ui.add(
+                        egui::Label::new(
+                            egui::RichText::new("Media Downloader")
+                                .size(15.0)
                                 .strong()
-                                .color(egui::Color32::from_rgb(15, 20, 15)),
+                                .color(theme.text_primary),
+                        )
+                        .selectable(false)
+                        .sense(egui::Sense::drag()),
+                    );
+                    let badge_resp = ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(format!("v{} • {}", APP_VERSION, theme.os_badge))
+                                .size(11.8)
+                                .color(theme.text_muted),
+                        )
+                        .selectable(false)
+                        .sense(egui::Sense::drag()),
+                    );
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let close_btn = egui::Button::new(
+                            egui::RichText::new("×").size(15.0).strong().color(theme.text_primary),
                         )
                         .rounding(egui::Rounding::same(14.0))
-                        .fill(theme.accent_green);
+                        .min_size(egui::vec2(28.0, 28.0))
+                        .fill(theme.card_elevated);
 
-                        if ui.add(upd_btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                            trigger_self_update_and_restart();
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        if ui.add(close_btn).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Close (Esc)").clicked() {
+                            if self.phase == PopupPhase::Downloading || self.phase == PopupPhase::Paused {
+                                self.cancel_all_and_exit(ctx);
+                            } else {
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
                         }
-                    }
 
-                    // Everything to the left of the buttons is the draggable title bar!
-                    let drag_rect = ui.available_rect_before_wrap();
-                    let drag_resp = ui.interact(
-                        drag_rect,
-                        egui::Id::new("popup_header_drag_bar"),
-                        egui::Sense::click_and_drag(),
-                    );
-                    if drag_resp.hovered() {
+                        if let Some(ref new_tag) = self.available_update {
+                            ui.add_space(6.0);
+                            let upd_btn = egui::Button::new(
+                                egui::RichText::new(format!("⬆ Update to {} Now", new_tag))
+                                    .size(12.0)
+                                    .strong()
+                                    .color(egui::Color32::from_rgb(15, 20, 15)),
+                            )
+                            .rounding(egui::Rounding::same(14.0))
+                            .fill(theme.accent_green);
+
+                            if ui.add(upd_btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                trigger_self_update_and_restart();
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
+                        }
+
+                        // Make the middle empty space of this 28px header row draggable too!
+                        let rem_w = ui.available_width();
+                        if rem_w > 4.0 {
+                            let (_, bar_resp) = ui.allocate_exact_size(
+                                egui::vec2(rem_w, 28.0),
+                                egui::Sense::drag(),
+                            );
+                            if bar_resp.hovered() {
+                                ctx.set_cursor_icon(egui::CursorIcon::Grab);
+                            }
+                            if bar_resp.drag_started() {
+                                ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                            }
+                        }
+                    });
+
+                    if title_resp.hovered() || badge_resp.hovered() {
                         ctx.set_cursor_icon(egui::CursorIcon::Grab);
                     }
-                    if drag_resp.drag_started() || drag_resp.dragged() {
-                        ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+                    if title_resp.drag_started() || badge_resp.drag_started() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
                     }
-
-                    ui.allocate_new_ui(egui::UiBuilder::new().max_rect(drag_rect), |ui| {
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            ui.label(
-                                egui::RichText::new("Media Downloader")
-                                    .size(15.0)
-                                    .strong()
-                                    .color(theme.text_primary),
-                            );
-                            ui.label(
-                                egui::RichText::new(format!("v{} • {}", APP_VERSION, theme.os_badge))
-                                    .size(11.8)
-                                    .color(theme.text_muted),
-                            );
-                        });
-                    });
                 });
+
                 ui.add_space(8.0);
 
                 match &self.phase {
@@ -2586,7 +2596,6 @@ impl eframe::App for QuickPopupApp {
 }
 
 fn main() -> eframe::Result<()> {
-    // Single-Instance IPC Check: If media-popup is already open, summon/focus it and exit immediately!
     let ipc_addr = format!("127.0.0.1:{}", SINGLE_INSTANCE_PORT);
     let ipc_listener = match TcpListener::bind(&ipc_addr) {
         Ok(listener) => listener,
