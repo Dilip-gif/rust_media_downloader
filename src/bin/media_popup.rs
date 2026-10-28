@@ -2192,55 +2192,71 @@ impl eframe::App for QuickPopupApp {
                     .inner_margin(egui::Margin::symmetric(18.0, 14.0)),
             )
             .show(ctx, |ui| {
-                // --- TOP HEADER ROW ---
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new("Media Downloader")
-                            .size(15.0)
-                            .strong()
-                            .color(theme.text_primary),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!("v{} • {}", APP_VERSION, theme.os_badge))
-                            .size(11.8)
-                            .color(theme.text_muted),
-                    );
+                // --- TOP HEADER ROW (Draggable Title Bar + Right-Side Action Buttons) ---
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let close_btn = egui::Button::new(
+                        egui::RichText::new("×").size(15.0).strong().color(theme.text_primary),
+                    )
+                    .rounding(egui::Rounding::same(14.0))
+                    .min_size(egui::vec2(28.0, 28.0))
+                    .fill(theme.card_elevated);
 
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let close_btn = egui::Button::new(
-                            egui::RichText::new("×").size(15.0).strong().color(theme.text_primary),
+                    if ui.add(close_btn).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Close (Esc)").clicked() {
+                        if self.phase == PopupPhase::Downloading || self.phase == PopupPhase::Paused {
+                            self.cancel_all_and_exit(ctx);
+                        } else {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                    }
+
+                    if let Some(ref new_tag) = self.available_update {
+                        ui.add_space(6.0);
+                        let upd_btn = egui::Button::new(
+                            egui::RichText::new(format!("⬆ Update to {} Now", new_tag))
+                                .size(12.0)
+                                .strong()
+                                .color(egui::Color32::from_rgb(15, 20, 15)),
                         )
                         .rounding(egui::Rounding::same(14.0))
-                        .min_size(egui::vec2(28.0, 28.0))
-                        .fill(theme.card_elevated);
+                        .fill(theme.accent_green);
 
-                        if ui.add(close_btn).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Close (Esc)").clicked() {
-                            if self.phase == PopupPhase::Downloading || self.phase == PopupPhase::Paused {
-                                self.cancel_all_and_exit(ctx);
-                            } else {
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                            }
+                        if ui.add(upd_btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            trigger_self_update_and_restart();
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
+                    }
 
-                        if let Some(ref new_tag) = self.available_update {
-                            ui.add_space(6.0);
-                            let upd_btn = egui::Button::new(
-                                egui::RichText::new(format!("⬆ Update to {} Now", new_tag))
-                                    .size(12.0)
+                    // Everything to the left of the buttons is the draggable title bar!
+                    let drag_rect = ui.available_rect_before_wrap();
+                    let drag_resp = ui.interact(
+                        drag_rect,
+                        egui::Id::new("popup_header_drag_bar"),
+                        egui::Sense::click_and_drag(),
+                    );
+                    if drag_resp.hovered() {
+                        ctx.set_cursor_icon(egui::CursorIcon::Grab);
+                    }
+                    if drag_resp.drag_started() || drag_resp.dragged() {
+                        ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+                        ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                    }
+
+                    ui.allocate_new_ui(egui::UiBuilder::new().max_rect(drag_rect), |ui| {
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.label(
+                                egui::RichText::new("Media Downloader")
+                                    .size(15.0)
                                     .strong()
-                                    .color(egui::Color32::from_rgb(15, 20, 15)),
-                            )
-                            .rounding(egui::Rounding::same(14.0))
-                            .fill(theme.accent_green);
-
-                            if ui.add(upd_btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                                trigger_self_update_and_restart();
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                            }
-                        }
+                                    .color(theme.text_primary),
+                            );
+                            ui.label(
+                                egui::RichText::new(format!("v{} • {}", APP_VERSION, theme.os_badge))
+                                    .size(11.8)
+                                    .color(theme.text_muted),
+                            );
+                        });
                     });
                 });
-
                 ui.add_space(8.0);
 
                 match &self.phase {

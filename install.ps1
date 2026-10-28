@@ -20,21 +20,26 @@ if (!(Get-Command python -ErrorAction SilentlyContinue)) {
 }
 
 # 2. Install yt-dlp, gallery-dl, and curl_cffi
-Write-Host "🐍 Setting up yt-dlp, gallery-dl, and curl_cffi..." -ForegroundColor Yellow
-pip install -U "yt-dlp[default,curl-cffi]" gallery-dl curl_cffi
+Write-Host "🐍 Verifying yt-dlp, gallery-dl, and curl_cffi..." -ForegroundColor Yellow
+pip install -U "yt-dlp[default,curl-cffi]" gallery-dl curl_cffi -q
 
-# 3. Download prebuilt Windows binaries (TUI + Quick-Popup GUI)
+# 3. Download prebuilt Windows binaries (using .old swap to avoid running .exe lock)
 $BaseDl = "https://github.com/$GithubUser/$RepoName/releases/latest/download"
 $TuiUrl = "$BaseDl/rust_media_downloader-windows-x86_64.exe"
 $PopupUrl = "$BaseDl/media_popup-windows-x86_64.exe"
 $TuiPath = "$InstallDir\media-tui.exe"
 $PopupPath = "$InstallDir\media-popup.exe"
 
+if (Test-Path $TuiPath) { Move-Item -Force $TuiPath "$TuiPath.old" -ErrorAction SilentlyContinue }
+if (Test-Path $PopupPath) { Move-Item -Force $PopupPath "$PopupPath.old" -ErrorAction SilentlyContinue }
+
 Write-Host "⬇️ Downloading prebuilt TUI binary (media-tui.exe)..." -ForegroundColor Yellow
 Invoke-WebRequest -Uri $TuiUrl -OutFile $TuiPath
 
 Write-Host "⬇️ Downloading prebuilt Quick-Popup GUI (media-popup.exe)..." -ForegroundColor Yellow
 Invoke-WebRequest -Uri $PopupUrl -OutFile $PopupPath
+
+Remove-Item -Force "$TuiPath.old", "$PopupPath.old" -ErrorAction SilentlyContinue
 
 # 4. Bind Global Shortcut (Ctrl + Alt + M) via Windows Start Menu Shortcut
 $StartMenuDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
@@ -56,5 +61,5 @@ if ($UserPath -notlike "*$InstallDir*") {
 }
 
 Write-Host ""
-Write-Host "✅ Installation Complete!" -ForegroundColor Green
+Write-Host "✅ Update / Installation Complete!" -ForegroundColor Green
 Write-Host "👉 Press [Ctrl + Alt + M] anywhere for the Quick Popup, or type 'media-tui' / 'media-popup' in terminal!" -ForegroundColor Cyan

@@ -12,25 +12,29 @@ echo " 🚀 Installing Rust Media Downloader ($TUI_BIN + $POPUP_BIN)"
 echo "==============================================================="
 mkdir -p "$INSTALL_DIR"
 
-# 1. Install system dependencies (ffmpeg, curl, python3-pip, nodejs, wl-clipboard/xclip)
-if command -v apt-get >/dev/null 2>&1; then
-    echo "📦 Installing system packages (ffmpeg, curl, python3-pip, xclip)..."
-    sudo apt-get update -qq
-    sudo apt-get install -y -qq ffmpeg curl python3-pip nodejs xclip wl-clipboard
-elif command -v pacman >/dev/null 2>&1; then
-    sudo pacman -Sy --noconfirm ffmpeg curl python-pip nodejs xclip wl-clipboard
-elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y ffmpeg curl python3-pip nodejs xclip wl-clipboard
-elif command -v brew >/dev/null 2>&1; then
-    brew install ffmpeg curl python node
+# 1. Only run sudo package manager if a required system package is actually missing!
+if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
+    echo "📦 Installing missing system packages (ffmpeg, curl, python3-pip, xclip)..."
+    if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq ffmpeg curl python3-pip nodejs xclip wl-clipboard
+    elif command -v pacman >/dev/null 2>&1; then
+        sudo pacman -Sy --noconfirm ffmpeg curl python-pip nodejs xclip wl-clipboard
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y ffmpeg curl python3-pip nodejs xclip wl-clipboard
+    elif command -v brew >/dev/null 2>&1; then
+        brew install ffmpeg curl python node
+    fi
+else
+    echo "✔ System packages (ffmpeg, curl, python3) already installed."
 fi
 
-# 2. Install Python extraction & Chrome TLS impersonation engines
-echo "🐍 Setting up yt-dlp, gallery-dl, and curl_cffi..."
-pip3 install -U "yt-dlp[default,curl-cffi]" gallery-dl curl_cffi --break-system-packages 2>/dev/null || \
-pip3 install -U "yt-dlp[default,curl-cffi]" gallery-dl curl_cffi --user
+# 2. Install/Update Python extraction & Chrome TLS impersonation engines
+echo "🐍 Verifying yt-dlp, gallery-dl, and curl_cffi..."
+pip3 install -U "yt-dlp[default,curl-cffi]" gallery-dl curl_cffi --break-system-packages -q 2>/dev/null || \
+pip3 install -U "yt-dlp[default,curl-cffi]" gallery-dl curl_cffi --user -q
 
-# 3. Download pre-compiled binaries from GitHub Releases
+# 3. Download pre-compiled binaries to .tmp first, then atomically mv -f (prevents curl error 23 ETXTBSY!)
 OS_TYPE="$(uname -s)"
 if [ "$OS_TYPE" = "Darwin" ]; then
     TUI_ASSET="rust_media_downloader-macos-arm64"
@@ -46,13 +50,15 @@ POPUP_URL="$BASE_DL/$POPUP_ASSET"
 
 if curl --output /dev/null --silent --head --fail -L "$TUI_URL"; then
     echo "⬇️ Downloading prebuilt TUI binary ($TUI_BIN)..."
-    curl -fsSL "$TUI_URL" -o "$INSTALL_DIR/$TUI_BIN"
-    chmod +x "$INSTALL_DIR/$TUI_BIN"
+    curl -fsSL "$TUI_URL" -o "$INSTALL_DIR/$TUI_BIN.tmp"
+    chmod +x "$INSTALL_DIR/$TUI_BIN.tmp"
+    mv -f "$INSTALL_DIR/$TUI_BIN.tmp" "$INSTALL_DIR/$TUI_BIN"
 
     if curl --output /dev/null --silent --head --fail -L "$POPUP_URL"; then
         echo "⬇️ Downloading prebuilt Quick-Popup GUI ($POPUP_BIN)..."
-        curl -fsSL "$POPUP_URL" -o "$INSTALL_DIR/$POPUP_BIN"
-        chmod +x "$INSTALL_DIR/$POPUP_BIN"
+        curl -fsSL "$POPUP_URL" -o "$INSTALL_DIR/$POPUP_BIN.tmp"
+        chmod +x "$INSTALL_DIR/$POPUP_BIN.tmp"
+        mv -f "$INSTALL_DIR/$POPUP_BIN.tmp" "$INSTALL_DIR/$POPUP_BIN"
     fi
 else
     echo "⚙️ Building binaries from source with Cargo..."
@@ -64,13 +70,15 @@ else
     git clone "https://github.com/$GITHUB_USER/$REPO_NAME.git" "$TMP_DIR"
     cd "$TMP_DIR"
     cargo build --release --bins
-    cp target/release/rust_media_downloader "$INSTALL_DIR/$TUI_BIN"
-    cp target/release/media_popup "$INSTALL_DIR/$POPUP_BIN"
-    chmod +x "$INSTALL_DIR/$TUI_BIN" "$INSTALL_DIR/$POPUP_BIN"
+    cp target/release/rust_media_downloader "$INSTALL_DIR/$TUI_BIN.tmp"
+    cp target/release/media_popup "$INSTALL_DIR/$POPUP_BIN.tmp"
+    chmod +x "$INSTALL_DIR/$TUI_BIN.tmp" "$INSTALL_DIR/$POPUP_BIN.tmp"
+    mv -f "$INSTALL_DIR/$TUI_BIN.tmp" "$INSTALL_DIR/$TUI_BIN"
+    mv -f "$INSTALL_DIR/$POPUP_BIN.tmp" "$INSTALL_DIR/$POPUP_BIN"
     rm -rf "$TMP_DIR"
 fi
 
-# 4. Auto-bind Super+M shortcut on Ubuntu / GNOME Desktop!
+# 4. Auto-bind Super+M shortcut on Ubuntu / GNOME Desktop
 if command -v gsettings >/dev/null 2>&1 && [ -f "$INSTALL_DIR/$POPUP_BIN" ]; then
     KEY_PATH="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/rust-media-popup/"
     EXISTING=$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings 2>/dev/null || echo "")
@@ -99,5 +107,5 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
 fi
 
 echo ""
-echo "✅ Installation Complete!"
+echo "✅ Update / Installation Complete!"
 echo "👉 Press [Super + M] anywhere for the Quick Popup GUI, or type '$TUI_BIN' in your terminal!"
